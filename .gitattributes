@@ -1,0 +1,8 @@
+# 所有文本文件统一使用 LF
+* text=auto eol=lf
+
+# 指定二进制文件，防止被误修改
+*.png binary
+*.jpg binary
+*.ico binary
+*.pdf binary
