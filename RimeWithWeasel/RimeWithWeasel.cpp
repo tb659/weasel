@@ -756,6 +756,10 @@ bool RimeWithWeaselHandler::_Respond(WeaselSessionId ipc_id, EatLine eat) {
   static const std::wstring Bool_wstring[] = {L"0", L"1"};
   if (rime_api->get_status(session_id, &status)) {
     is_composing = !!status.is_composing;
+    const auto user_predicting =
+        !!rime_api->get_option(session_id, "_user_predicting");
+    const auto user_prediction_visible =
+        !!rime_api->get_option(session_id, "_user_prediction_visible");
     actions.push_back("status");
     body.append(L"status.ascii_mode=")
         .append(Bool_wstring[!!status.is_ascii_mode])
@@ -768,6 +772,12 @@ bool RimeWithWeaselHandler::_Respond(WeaselSessionId ipc_id, EatLine eat) {
         .append(L"\n")
         .append(L"status.full_shape=")
         .append(Bool_wstring[!!status.is_full_shape])
+        .append(L"\n")
+        .append(L"status.user_predicting=")
+        .append(Bool_wstring[user_predicting])
+        .append(L"\n")
+        .append(L"status.user_prediction_visible=")
+        .append(Bool_wstring[user_prediction_visible])
         .append(L"\n")
         .append(L"status.schema_id=")
         .append(status.schema_id ? u8tow(status.schema_id) : std::wstring())

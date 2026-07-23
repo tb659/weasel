@@ -124,4 +124,14 @@ void StatusUpdater::Store(Deserializer::KeyType const& k,
     m_pTarget->p_status->full_shape = bool_value;
     return;
   }
+
+  if (k[1] == L"user_predicting") {
+    m_pTarget->p_status->user_predicting = bool_value;
+    return;
+  }
+
+  if (k[1] == L"user_prediction_visible") {
+    m_pTarget->p_status->user_prediction_visible = bool_value;
+    return;
+  }
 }

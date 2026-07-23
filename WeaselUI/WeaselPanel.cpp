@@ -50,6 +50,38 @@ static inline void ReconfigRoundInfo(IsToRoundStruct& rd,
   }
 }
 
+namespace {
+
+bool ContainsPredictionPlaceholder(const weasel::Context& ctx) {
+  return ctx.preedit.str.find(L"zpredictz") != std::wstring::npos;
+}
+
+void TracePredictionUiState(const weasel::Context& ctx,
+                            const weasel::Status& status,
+                            BYTE candidate_count,
+                            bool hide_candidates) {
+  if (!status.user_prediction_visible) {
+    return;
+  }
+  wchar_t buffer[256] = {};
+  swprintf_s(buffer,
+             L"[WeaselPredict] composing=%d cand=%u hide=%d preedit_empty=%d aux_empty=%d\r\n",
+             status.composing ? 1 : 0, candidate_count,
+             hide_candidates ? 1 : 0, ctx.preedit.empty() ? 1 : 0,
+             ctx.aux.empty() ? 1 : 0);
+  OutputDebugStringW(buffer);
+}
+
+bool ShouldSuppressPredictionPlaceholder(const weasel::Context& ctx,
+                                         const weasel::Status& status) {
+  if (!status.composing || ctx.cinfo.empty()) {
+    return false;
+  }
+  return status.user_prediction_visible || ContainsPredictionPlaceholder(ctx);
+}
+
+}  // namespace
+
 WeaselPanel::WeaselPanel(weasel::UI& ui)
     : m_layout(NULL),
       m_ctx(ui.ctx()),
@@ -161,6 +193,7 @@ void WeaselPanel::Refresh() {
       (m_style.inline_preedit && m_candidateCount == 0) && !show_tips;
   hide_candidates = inline_no_candidates ||
                     (margin_negative && !show_tips && !show_schema_menu);
+  TracePredictionUiState(m_ctx, m_status, m_candidateCount, hide_candidates);
 
   // only RedrawWindow if no need to hide candidates window, or
   // inline_no_candidates
@@ -632,8 +665,16 @@ bool WeaselPanel::_DrawPreedit(const Text& text,
                                CDCHandle dc,
                                const CRect& rc) {
   bool drawn = false;
+  const bool suppress_prediction_placeholder =
+      ShouldSuppressPredictionPlaceholder(m_ctx, m_status) &&
+      &text == &m_ctx.preedit;
+  if (suppress_prediction_placeholder) {
+    return true;
+  }
   std::wstring const& t = text.str;
   IDWriteTextFormat1* txtFormat = pDWR->pPreeditTextFormat.Get();
+  const int normal_text_color = m_style.text_color;
+  const int hilited_text_color = m_style.hilited_text_color;
 
   if (!t.empty()) {
     weasel::TextRange range = m_layout->GetPreeditRange();
@@ -655,10 +696,10 @@ bool WeaselPanel::_DrawPreedit(const Text& text,
         CRect rc_before;
         if (m_style.layout_type == UIStyle::LAYOUT_VERTICAL_TEXT)
           rc_before = CRect(rc.left, y, rc.right, y + beforeSz.cy);
-        else
-          rc_before = CRect(x, rc.top, rc.left + beforeSz.cx, rc.bottom);
+         else
+           rc_before = CRect(x, rc.top, rc.left + beforeSz.cx, rc.bottom);
         _TextOut(rc_before, str_before.c_str(), str_before.length(),
-                 m_style.text_color, txtFormat);
+                 normal_text_color, txtFormat);
         if (m_style.layout_type == UIStyle::LAYOUT_VERTICAL_TEXT)
           y += beforeSz.cy + DPI_SCALE(m_style.hilite_spacing);
         else
@@ -675,7 +716,7 @@ bool WeaselPanel::_DrawPreedit(const Text& text,
         else
           rc_hi = CRect(x, rc.top, x + hilitedSz.cx, rc.bottom);
         _TextOut(rc_hi, str_highlight.c_str(), str_highlight.length(),
-                 m_style.hilited_text_color, txtFormat);
+                 hilited_text_color, txtFormat);
         if (m_style.layout_type == UIStyle::LAYOUT_VERTICAL_TEXT)
           y += rc_hi.Height() + DPI_SCALE(m_style.hilite_spacing);
         else
@@ -690,11 +731,11 @@ bool WeaselPanel::_DrawPreedit(const Text& text,
         else
           rc_after = CRect(x, rc.top, x + afterSz.cx, rc.bottom);
         _TextOut(rc_after, str_after.c_str(), str_after.length(),
-                 m_style.text_color, txtFormat);
+                 normal_text_color, txtFormat);
       }
     } else {
       CRect rcText(rc.left, rc.top, rc.right, rc.bottom);
-      _TextOut(rcText, t.c_str(), t.length(), m_style.text_color, txtFormat);
+      _TextOut(rcText, t.c_str(), t.length(), normal_text_color, txtFormat);
     }
     // draw pager mark if not inline_preedit if necessary
     if (m_candidateCount && !m_style.inline_preedit &&
@@ -728,6 +769,12 @@ bool WeaselPanel::_DrawPreeditBack(const Text& text,
                                    CDCHandle dc,
                                    const CRect& rc) {
   bool drawn = false;
+  const bool suppress_prediction_placeholder =
+      ShouldSuppressPredictionPlaceholder(m_ctx, m_status) &&
+      &text == &m_ctx.preedit;
+  if (suppress_prediction_placeholder) {
+    return true;
+  }
   std::wstring const& t = text.str;
   IDWriteTextFormat1* txtFormat = pDWR->pPreeditTextFormat.Get();
 

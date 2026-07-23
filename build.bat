@@ -2,11 +2,16 @@
 
 setlocal
 
+set SCRIPT_DIR=%~dp0
+if "%SCRIPT_DIR:~-1%"=="\" set SCRIPT_DIR=%SCRIPT_DIR:~0,-1%
+
+cd /d "%SCRIPT_DIR%"
+
 if not exist env.bat copy env.bat.template env.bat
 
 if exist env.bat call env.bat
 
-if not defined WEASEL_ROOT set WEASEL_ROOT=%CD%
+if not defined WEASEL_ROOT set WEASEL_ROOT=%SCRIPT_DIR%
 
 if not defined VERSION_MAJOR set VERSION_MAJOR=0
 if not defined VERSION_MINOR set VERSION_MINOR=17
@@ -71,6 +76,9 @@ if not defined PLATFORM_TOOLSET (
 
 if defined DEVTOOLS_PATH set PATH=%DEVTOOLS_PATH%%PATH%
 
+set MSBUILD_EXE=msbuild.exe
+if exist "%ProgramFiles%\Microsoft Visual Studio\Community\MSBuild\Current\Bin\MSBuild.exe" set MSBUILD_EXE=%ProgramFiles%\Microsoft Visual Studio\Community\MSBuild\Current\Bin\MSBuild.exe
+
 set build_config=Release
 set build_option=/t:Build
 set build_boost=0
@@ -126,6 +134,15 @@ if %build_rime% == 0 (
   set build_weasel=1
 )))))
 
+if %build_weasel% == 1 (
+  if not exist lib64\rime.lib (
+    set build_rime=1
+  )
+  if not exist lib\rime.lib (
+    set build_rime=1
+  )
+)
+
 rem quit WeaselServer.exe before building
 cd /d %WEASEL_ROOT%
 if exist output\weaselserver.exe (
@@ -134,6 +151,8 @@ if exist output\weaselserver.exe (
 
 rem build booost
 if %build_boost% == 1 (
+  call :setup_vs_env x86
+  if errorlevel 1 exit /b 1
   call :build_boost
   if errorlevel 1 exit /b 1
   cd /d %WEASEL_ROOT%
@@ -148,6 +167,8 @@ if %build_rime% == 1 (
   cd %WEASEL_ROOT%\librime
   rem clean cache before building
   for %%a in ( build dist lib ^
+    build_x64 dist_x64 lib_x64 ^
+    build_Win32 dist_Win32 lib_Win32 ^
     deps\glog\build ^
     deps\googletest\build ^
     deps\leveldb\build ^
@@ -201,15 +222,15 @@ if not defined SDKVER set build_sdk_option=
 
 if %build_arm64% == 1 (
 
-  msbuild.exe weasel.sln %build_option% /p:Configuration=%build_config% /p:Platform="ARM" /fl6 %build_sdk_option%
+  "%MSBUILD_EXE%" weasel.sln %build_option% /p:Configuration=%build_config% /p:Platform="ARM" /fl6 %build_sdk_option%
   if errorlevel 1 goto error
-  msbuild.exe weasel.sln %build_option% /p:Configuration=%build_config% /p:Platform="ARM64" /fl5 %build_sdk_option%
+  "%MSBUILD_EXE%" weasel.sln %build_option% /p:Configuration=%build_config% /p:Platform="ARM64" /fl5 %build_sdk_option%
   if errorlevel 1 goto error
 )
 
-msbuild.exe weasel.sln %build_option% /p:Configuration=%build_config% /p:Platform="x64" /fl2 %build_sdk_option%
+"%MSBUILD_EXE%" weasel.sln %build_option% /p:Configuration=%build_config% /p:Platform="x64" /fl2 %build_sdk_option%
 if errorlevel 1 goto error
-msbuild.exe weasel.sln %build_option% /p:Configuration=%build_config% /p:Platform="Win32" /fl1 %build_sdk_option%
+"%MSBUILD_EXE%" weasel.sln %build_option% /p:Configuration=%build_config% /p:Platform="Win32" /fl1 %build_sdk_option%
 if errorlevel 1 goto error
 
 if %build_arm64% == 1 (
@@ -284,6 +305,17 @@ rem build boost
   )
   exit /b
 
+rem -------------------------------------------------------------------------
+:setup_vs_env
+  set VS_ARCH=%~1
+  if "%VS_ARCH%"=="" set VS_ARCH=x64
+  if exist "%ProgramFiles%\Microsoft Visual Studio\Community\Common7\Tools\VsDevCmd.bat" (
+    call "%ProgramFiles%\Microsoft Visual Studio\Community\Common7\Tools\VsDevCmd.bat" -arch=%VS_ARCH% -host_arch=x64 >nul
+    exit /b %errorlevel%
+  )
+  echo Error: VsDevCmd.bat not found.
+  exit /b 1
+
 rem ---------------------------------------------------------------------------
 :build_data
   copy %WEASEL_ROOT%\LICENSE.txt output\
@@ -336,21 +368,32 @@ rem %1 : ARCH
 rem %2 : target_path of rime.lib, base %WEASEL_ROOT% or abs path
 rem %3 : target_path of rime.dll, base %WEASEL_ROOT% or abs path
 :build_librime_platform
+  if /I "%1"=="x64" (
+    call :setup_vs_env x64
+  ) else (
+    call :setup_vs_env x86
+  )
+  if errorlevel 1 goto error
+
   rem restore backuped %1 build
   call :stash_build %1 pop
 
   cd %WEASEL_ROOT%\librime
+  set OLD_PLATFORM_TOOLSET=%PLATFORM_TOOLSET%
+  set PLATFORM_TOOLSET=
   if not exist env.bat (
     copy %WEASEL_ROOT%\env.bat env.bat
   )
   if not exist lib\opencc.lib (
     call build.bat deps %rime_build_variant%
     if errorlevel 1 (
+      set PLATFORM_TOOLSET=%OLD_PLATFORM_TOOLSET%
       call :stash_build %1 push
       goto error
     )
   )
   call build.bat %rime_build_variant%
+  set PLATFORM_TOOLSET=%OLD_PLATFORM_TOOLSET%
   if errorlevel 1 (
     call :stash_build %1 push
     goto error

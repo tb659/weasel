@@ -153,7 +153,9 @@ struct Status {
         ascii_mode(false),
         composing(false),
         disabled(false),
-        full_shape(false) {}
+        full_shape(false),
+        user_predicting(false),
+        user_prediction_visible(false) {}
   void reset() {
     schema_name.clear();
     schema_id.clear();
@@ -161,13 +163,18 @@ struct Status {
     composing = false;
     disabled = false;
     full_shape = false;
+    user_predicting = false;
+    user_prediction_visible = false;
     type = SCHEMA;
   }
   bool operator==(const Status status) {
     return (status.schema_name == schema_name &&
             status.schema_id == schema_id && status.ascii_mode == ascii_mode &&
             status.composing == composing && status.disabled == disabled &&
-            status.full_shape == full_shape && status.type == type);
+            status.full_shape == full_shape &&
+            status.user_predicting == user_predicting &&
+            status.user_prediction_visible == user_prediction_visible &&
+            status.type == type);
   }
   // 輸入方案
   std::wstring schema_name;
@@ -181,6 +188,9 @@ struct Status {
   bool disabled;
   // 全角状态
   bool full_shape;
+  // Lua 预测链状态镜像
+  bool user_predicting;
+  bool user_prediction_visible;
   // 图标类型, schema/full_shape
   IconType type;
 };

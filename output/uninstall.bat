@@ -29,7 +29,11 @@ rem regsvr32.exe /s /u "%CD%\weasel.dll"
 goto next
 
 :win7_x64_uninstall
-WeaselSetupx64.exe /u
+if exist WeaselSetupx64.exe (
+  WeaselSetupx64.exe /u
+) else (
+  WeaselSetup.exe /u
+)
 rem regsvr32.exe /s /u "%CD%\weasel.dll"
 rem regsvr32.exe /s /u "%CD%\weaselx64.dll"
 goto next
