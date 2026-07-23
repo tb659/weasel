@@ -3,9 +3,9 @@ name: CI
 on:
   push:
     branches:
-      - '*'
+      - "*"
     tags:
-      - '[0-9]+.*'
+      - "[0-9]+.*"
   pull_request:
   workflow_dispatch:
 
@@ -170,7 +170,7 @@ jobs:
 
       - name: Create Nightly release
         if: ${{ github.repository == 'rime/weasel' && github.ref == 'refs/heads/master' && matrix.variant == 'msbuild' }}
-        uses: 'marvinpinto/action-automatic-releases@latest'
+        uses: "marvinpinto/action-automatic-releases@latest"
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           automatic_release_tag: latest

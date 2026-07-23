@@ -3,9 +3,7 @@ on:
   release:
     types: [published, prereleased]
 jobs:
-
   update_appcast:
-
     runs-on: windows-2019
 
     steps:

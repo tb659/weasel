@@ -2,19 +2,19 @@
 
 ## Preparation
 
-  - Install **Visual Studio 2017** for *Desktop development in C++*
-    with components *ATL*, *MFC* and *Windows XP support*.
-    Visual Studio 2015 or later versions may work with additional configuration.
+- Install **Visual Studio 2017** for _Desktop development in C++_
+  with components _ATL_, _MFC_ and _Windows XP support_.
+  Visual Studio 2015 or later versions may work with additional configuration.
 
-  - Install dev tools: `git`, `cmake`， `clang-format(>=17.0.6)`
+- Install dev tools: `git`, `cmake`， `clang-format(>=17.0.6)`
 
-  - Download third-party libraries: `boost(>=1.60.0)`
+- Download third-party libraries: `boost(>=1.60.0)`
 
 Optional:
 
-  - install `bash` via *Git for Windows*, for installing data files with `plum`;
-  - install `python` for building OpenCC dictionaries;
-  - install [NSIS](http://nsis.sourceforge.net/Download) for creating installer.
+- install `bash` via _Git for Windows_, for installing data files with `plum`;
+- install `python` for building OpenCC dictionaries;
+- install [NSIS](http://nsis.sourceforge.net/Download) for creating installer.
 
 ## Checkout source code
 
@@ -38,7 +38,7 @@ Make sure `BOOST_ROOT` is set to the existing path `X:\path\to\boost_<version>`.
 When using a different version of Visual Studio or platform toolset, un-comment
 lines to set corresponding variables.
 
-Alternatively, start a *Developer Command Prompt* window and set environment
+Alternatively, start a _Developer Command Prompt_ window and set environment
 variables directly in the console, before invocation of `build.bat`:
 
 ```batch
