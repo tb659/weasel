@@ -87,7 +87,8 @@ STDAPI CStartCompositionEditSession::DoEditSession(TfEditCookie ec) {
      *   See https://github.com/rime/weasel/pull/883#issuecomment-1567625762
      */
     if (!_inlinePreeditEnabled) {
-      pRangeComposition->SetText(ec, TF_ST_CORRECTION, L" ", 1);
+      static constexpr wchar_t kZeroWidthSpace[] = L"\u200B";
+      pRangeComposition->SetText(ec, TF_ST_CORRECTION, kZeroWidthSpace, 1);
     }
 
     /* set selection */
