@@ -1,6 +1,8 @@
 ﻿#include "stdafx.h"
 #include "DictManagementDialog.h"
+#include "CreateWordDialog.h"
 #include "Configurator.h"
+#include "TraceLog.h"
 #include <WeaselUtility.h>
 #include <rime_api.h>
 #include "WeaselDeployer.h"
@@ -75,6 +77,7 @@ void DictManagementDialog::Populate() {
 }
 
 LRESULT DictManagementDialog::OnInitDialog(UINT, WPARAM, LPARAM, BOOL&) {
+  AppendWeaselDeployerTrace(L"DictManagementDialog::OnInitDialog");
   user_dict_list_.Attach(GetDlgItem(IDC_USER_DICT_LIST));
   backup_.Attach(GetDlgItem(IDC_BACKUP));
   backup_.EnableWindow(FALSE);
@@ -84,6 +87,8 @@ LRESULT DictManagementDialog::OnInitDialog(UINT, WPARAM, LPARAM, BOOL&) {
   export_.EnableWindow(FALSE);
   import_.Attach(GetDlgItem(IDC_IMPORT));
   import_.EnableWindow(FALSE);
+  create_word_.Attach(GetDlgItem(IDC_CREATE_WORD_BUTTON));
+  sync_user_data_.Attach(GetDlgItem(IDC_SYNC_USER_DATA_BUTTON));
 
   Populate();
 
@@ -94,6 +99,96 @@ LRESULT DictManagementDialog::OnInitDialog(UINT, WPARAM, LPARAM, BOOL&) {
 
 LRESULT DictManagementDialog::OnClose(UINT, WPARAM, LPARAM, BOOL&) {
   EndDialog(IDCANCEL);
+  return 0;
+}
+
+LRESULT DictManagementDialog::OnCommandTrace(UINT,
+                                             WPARAM wParam,
+                                             LPARAM,
+                                             BOOL& bHandled) {
+  const WORD id = LOWORD(wParam);
+  const WORD code = HIWORD(wParam);
+  AppendWeaselDeployerTrace(std::wstring(L"DictManagementDialog::WM_COMMAND id=") +
+                            std::to_wstring(id) + L" code=" +
+                            std::to_wstring(code));
+  bHandled = FALSE;
+  return 0;
+}
+
+bool DictManagementDialog::UpdateUserPhraseInPlace(const std::string& schema_id,
+                                                   const std::string& code,
+                                                   const std::string& text,
+                                                   bool remove) {
+  AppendWeaselDeployerTrace(L"DictManagementDialog::UpdateUserPhraseInPlace begin");
+  if (!api_ || schema_id.empty() || code.empty() || text.empty()) {
+    AppendWeaselDeployerTrace(L"DictManagementDialog::UpdateUserPhraseInPlace invalid args");
+    return false;
+  }
+  const Bool ok = remove ? api_->remove_user_phrase(schema_id.c_str(), code.c_str(),
+                                                      text.c_str())
+                         : api_->add_user_phrase(schema_id.c_str(), code.c_str(),
+                                                text.c_str());
+  AppendWeaselDeployerTrace(std::wstring(L"DictManagementDialog::UpdateUserPhraseInPlace ok=") + (ok ? L"true" : L"false"));
+  return !!ok;
+}
+
+bool DictManagementDialog::SyncUserDataInPlace() {
+  RimeApi* rime = rime_get_api();
+  if (!rime || !rime->sync_user_data()) {
+    return false;
+  }
+  rime->join_maintenance_thread();
+  return true;
+}
+
+LRESULT DictManagementDialog::OnCreateWord(WORD, WORD, HWND, BOOL&) {
+  AppendWeaselDeployerTrace(L"DictManagementDialog::OnCreateWord begin");
+  CreateWordDialog dialog;
+  const INT_PTR result = dialog.DoModal();
+  AppendWeaselDeployerTrace(std::wstring(L"DictManagementDialog::OnCreateWord DoModal=") + std::to_wstring(result));
+  if (result != IDOK) {
+    return 0;
+  }
+  if (!UpdateUserPhraseInPlace(dialog.schema_id(), dialog.code(),
+                               dialog.text(), dialog.remove_mode())) {
+    AppendWeaselDeployerTrace(L"DictManagementDialog::OnCreateWord update failed");
+    const wchar_t* action = dialog.remove_mode() ? L"删词" : L"造词";
+    std::wstring message = std::wstring(L"执行") + action +
+                           L"失败。\n请检查方案、编码和词条是否正确。";
+    MessageBox(message.c_str(), L"Weasel Deployer",
+               MB_OK | MB_ICONERROR);
+    return 0;
+  }
+  const wchar_t* action = dialog.remove_mode() ? L"删词" : L"造词";
+  AppendWeaselDeployerTrace(L"DictManagementDialog::OnCreateWord update ok");
+  std::wstring prompt = std::wstring(action) +
+                        L"完成。\n是否立即同步用户资料？";
+  if (MessageBox(prompt.c_str(), L"Weasel Deployer",
+                 MB_YESNO | MB_ICONQUESTION) == IDYES) {
+    if (!SyncUserDataInPlace()) {
+      MessageBox(L"同步用户资料失败。", L"Weasel Deployer",
+                 MB_OK | MB_ICONERROR);
+      return 0;
+    }
+    MessageBox(L"同步用户资料完成。", L"Weasel Deployer",
+               MB_OK | MB_ICONINFORMATION);
+    return 0;
+  }
+  std::wstring message = std::wstring(action) +
+                         L"完成。\n如需跨端同步，请点击“同步用户资料”。";
+  MessageBox(message.c_str(), L"Weasel Deployer",
+             MB_OK | MB_ICONINFORMATION);
+  return 0;
+}
+
+LRESULT DictManagementDialog::OnSyncUserData(WORD, WORD, HWND, BOOL&) {
+  if (!SyncUserDataInPlace()) {
+    MessageBox(L"同步用户资料失败。", L"Weasel Deployer",
+               MB_OK | MB_ICONERROR);
+    return 0;
+  }
+  MessageBox(L"同步用户资料完成。", L"Weasel Deployer",
+             MB_OK | MB_ICONINFORMATION);
   return 0;
 }
 

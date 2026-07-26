@@ -11,6 +11,7 @@
 #define IDD_STYLE_SETTING               130
 #define IDI_DEPLOY                      131
 #define IDD_DICT_MANAGEMENT             132
+#define IDD_CREATE_WORD                 133
 #define IDS_STR_WEASEL                  133
 #define IDS_STR_SAD                     134
 #define IDS_STR_HAPPY                   135
@@ -50,6 +51,13 @@
 #define IDC_RESTORE                     1009
 #define IDC_EXPORT                      1010
 #define IDC_IMPORT                      1011
+#define IDC_WORD_ACTION                 1012
+#define IDC_WORD_SCHEMA                 1013
+#define IDC_WORD_CODE                   1014
+#define IDC_WORD_TEXT                   1015
+#define IDC_WORD_HINT                   1016
+#define IDC_CREATE_WORD_BUTTON          1017
+#define IDC_SYNC_USER_DATA_BUTTON       1018
 #define IDC_STATIC1                     -1
 
 // Next default values for new objects
@@ -57,9 +65,9 @@
 #ifdef APSTUDIO_INVOKED
 #ifndef APSTUDIO_READONLY_SYMBOLS
 #define _APS_NO_MFC                     1
-#define _APS_NEXT_RESOURCE_VALUE        135
+#define _APS_NEXT_RESOURCE_VALUE        136
 #define _APS_NEXT_COMMAND_VALUE         32771
-#define _APS_NEXT_CONTROL_VALUE         1012
+#define _APS_NEXT_CONTROL_VALUE         1019
 #define _APS_NEXT_SYMED_VALUE           110
 #endif
 #endif

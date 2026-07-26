@@ -298,7 +298,7 @@ void enable_profile(BOOL fEnable, bool hant) {
   }
 }
 
-// 注册TSF输入法
+// 注册TSF输入法 — 直接调用 DLL 的 DllRegisterServer，不走 regsvr32
 int register_text_service(const std::wstring& tsf_path,
                           bool register_ime,
                           bool is_wow64,
@@ -310,47 +310,78 @@ int register_text_service(const std::wstring& tsf_path,
   if (!register_ime)
     enable_profile(FALSE, hant);
 
-  std::wstring params = L" \"" + tsf_path + L"\"";
-  if (!register_ime) {
-    params = L" /u " + params;  // unregister
-  }
-  // if (silent)  // always silent
-  { params = L" /s " + params; }
-
   if (!SetEnvironmentVariable(L"TEXTSERVICE_PROFILE",
                               hant ? L"hant" : L"hans")) {
     throw std::runtime_error("SetEnvironmentVariable failed");
   }
 
-  std::wstring app = L"regsvr32.exe";
-  if (is_wowarm32) {
-    WCHAR sysarm32[MAX_PATH];
-    get_wow_arm32_system_dir(sysarm32, _countof(sysarm32));
+  if (is_wow64) {
+    // 64-bit DLL: use 64-bit regsvr32 via SysNative redirect
+    std::wstring params = register_ime ? L" /s \"" : L" /s /u \"";
+    params += tsf_path + L"\"";
+    std::wstring app = L"C:\\Windows\\SysNative\\regsvr32.exe";
 
-    app = std::wstring(sysarm32) + L"\\" + app;
-  }
-
-  SHELLEXECUTEINFOW shExInfo = {0};
-  shExInfo.cbSize = sizeof(shExInfo);
-  shExInfo.fMask = SEE_MASK_NOCLOSEPROCESS;
-  shExInfo.hwnd = 0;
-  shExInfo.lpVerb = L"open";               // Operation to perform
-  shExInfo.lpFile = app.c_str();           // Application to start
-  shExInfo.lpParameters = params.c_str();  // Additional parameters
-  shExInfo.lpDirectory = 0;
-  shExInfo.nShow = SW_SHOW;
-  shExInfo.hInstApp = 0;
-  if (ShellExecuteExW(&shExInfo)) {
-    WaitForSingleObject(shExInfo.hProcess, INFINITE);
-    CloseHandle(shExInfo.hProcess);
+    SHELLEXECUTEINFOW shExInfo = {0};
+    shExInfo.cbSize = sizeof(shExInfo);
+    shExInfo.fMask = SEE_MASK_NOCLOSEPROCESS;
+    shExInfo.hwnd = 0;
+    shExInfo.lpVerb = L"open";
+    shExInfo.lpFile = app.c_str();
+    shExInfo.lpParameters = params.c_str();
+    shExInfo.lpDirectory = 0;
+    shExInfo.nShow = SW_SHOW;
+    shExInfo.hInstApp = 0;
+    if (ShellExecuteExW(&shExInfo)) {
+      WaitForSingleObject(shExInfo.hProcess, 30000);
+      CloseHandle(shExInfo.hProcess);
+    } else {
+      WCHAR msg[100];
+      CString str;
+      str.LoadStringW(IDS_STR_ERRREGTSF);
+      StringCchPrintfW(msg, _countof(msg), str, tsf_path.c_str());
+      MSG_NOT_SILENT_ID_CAP(silent, msg, IDS_STR_INORUN_FAILED,
+                            MB_ICONERROR | MB_OK);
+      return 1;
+    }
   } else {
-    WCHAR msg[100];
-    CString str;
-    str.LoadStringW(IDS_STR_ERRREGTSF);
-    StringCchPrintfW(msg, _countof(msg), str, params.c_str());
-    MSG_NOT_SILENT_ID_CAP(silent, msg, IDS_STR_INORUN_FAILED,
-                          MB_ICONERROR | MB_OK);
-    return 1;
+    // 32-bit DLL: direct call via LoadLibrary
+    HMODULE hDll = LoadLibraryW(tsf_path.c_str());
+    if (!hDll) {
+      WCHAR msg[100];
+      CString str;
+      str.LoadStringW(IDS_STR_ERRREGTSF);
+      StringCchPrintfW(msg, _countof(msg), str, tsf_path.c_str());
+      MSG_NOT_SILENT_ID_CAP(silent, msg, IDS_STR_INORUN_FAILED,
+                            MB_ICONERROR | MB_OK);
+      return 1;
+    }
+
+    const char* entry_point = register_ime ? "DllRegisterServer"
+                                           : "DllUnregisterServer";
+    auto fn = (RegisterServerFunction)GetProcAddress(hDll, entry_point);
+    if (!fn) {
+      FreeLibrary(hDll);
+      WCHAR msg[100];
+      CString str;
+      str.LoadStringW(IDS_STR_ERRREGTSF);
+      StringCchPrintfW(msg, _countof(msg), str, tsf_path.c_str());
+      MSG_NOT_SILENT_ID_CAP(silent, msg, IDS_STR_INORUN_FAILED,
+                            MB_ICONERROR | MB_OK);
+      return 1;
+    }
+
+    HRESULT hr = fn();
+    FreeLibrary(hDll);
+
+    if (FAILED(hr)) {
+      WCHAR msg[100];
+      CString str;
+      str.Format(L"0x%08X", hr);
+      StringCchPrintfW(msg, _countof(msg), str, tsf_path.c_str());
+      MSG_NOT_SILENT_ID_CAP(silent, msg, IDS_STR_INORUN_FAILED,
+                            MB_ICONERROR | MB_OK);
+      return 1;
+    }
   }
 
   if (register_ime)

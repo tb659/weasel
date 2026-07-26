@@ -2,9 +2,11 @@
 #include "WeaselDeployer.h"
 #include "Configurator.h"
 #include "SwitcherSettingsDialog.h"
+#include "CreateWordDialog.h"
 #include "UIStyleSettings.h"
 #include "UIStyleSettingsDialog.h"
 #include "DictManagementDialog.h"
+#include "TraceLog.h"
 #include <WeaselConstants.h>
 #include <WeaselIPC.h>
 #include <WeaselIPCData.h>
@@ -233,5 +235,103 @@ int Configurator::SyncUserData() {
     LOG(INFO) << "Resuming service.";
     client.EndMaintenance();
   }
+  return 0;
+}
+
+int Configurator::CreateWord() {
+  AppendWeaselDeployerTrace(L"Configurator::CreateWord begin");
+  CreateWordDialog dialog;
+  const INT_PTR result = dialog.DoModal();
+  AppendWeaselDeployerTrace(std::wstring(L"Configurator::CreateWord DoModal=") + std::to_wstring(result));
+  if (result != IDOK) {
+    return 1;
+  }
+  const bool remove = dialog.remove_mode();
+  AppendWeaselDeployerTrace(L"Configurator::CreateWord calling UpdateUserPhrase");
+  if (UpdateUserPhrase(dialog.schema_id(), dialog.code(), dialog.text(),
+                       remove) != 0) {
+    AppendWeaselDeployerTrace(L"Configurator::CreateWord UpdateUserPhrase failed");
+    return 1;
+  }
+  AppendWeaselDeployerTrace(L"Configurator::CreateWord UpdateUserPhrase ok");
+
+  const wchar_t* action = remove ? L"删词" : L"造词";
+  std::wstring prompt = std::wstring(action) +
+                        L"完成。\n是否立即同步用户资料？";
+  if (MessageBox(NULL, prompt.c_str(), L"Weasel Deployer",
+                 MB_YESNO | MB_ICONQUESTION) == IDYES) {
+    const int sync_result = SyncUserData();
+    MessageBox(NULL,
+               sync_result == 0 ? L"同步用户资料完成。"
+                                : L"同步用户资料失败。",
+               L"Weasel Deployer",
+               sync_result == 0 ? MB_OK | MB_ICONINFORMATION
+                                : MB_OK | MB_ICONERROR);
+    return sync_result;
+  }
+
+  std::wstring message = std::wstring(action) +
+                         L"完成。\n如需跨端同步，请点击“同步用户资料”。";
+  MessageBox(NULL, message.c_str(), L"Weasel Deployer",
+             MB_OK | MB_ICONINFORMATION);
+  return 0;
+}
+
+int Configurator::UpdateUserPhrase(const std::string& schema_id,
+                                   const std::string& code,
+                                   const std::string& text,
+                                   bool remove) {
+  AppendWeaselDeployerTrace(L"Configurator::UpdateUserPhrase begin");
+  HANDLE hMutex = CreateMutex(NULL, TRUE, L"WeaselDeployerMutex");
+  if (!hMutex) {
+    AppendWeaselDeployerTrace(L"Configurator::UpdateUserPhrase mutex create failed");
+    LOG(ERROR) << "Error creating WeaselDeployerMutex.";
+    return 1;
+  }
+  if (GetLastError() == ERROR_ALREADY_EXISTS) {
+    AppendWeaselDeployerTrace(L"Configurator::UpdateUserPhrase mutex already exists");
+    LOG(WARNING) << "another deployer process is running; aborting operation.";
+    CloseHandle(hMutex);
+    MSG_BY_IDS(IDS_STR_DEPLOYING_WAIT, IDS_STR_WEASEL,
+               MB_OK | MB_ICONINFORMATION);
+    return 1;
+  }
+
+  RimeModule* levers = rime_get_api()->find_module("levers");
+  if (!levers) {
+    CloseHandle(hMutex);
+    LOG(ERROR) << "levers module not found.";
+    MessageBox(NULL, L"未找到 levers 模块。", L"Weasel Deployer",
+               MB_OK | MB_ICONERROR);
+    return 1;
+  }
+  RimeLeversApi* api = (RimeLeversApi*)levers->get_api();
+  if (!api) {
+    CloseHandle(hMutex);
+    LOG(ERROR) << "failed to acquire levers api.";
+    MessageBox(NULL, L"无法获取词典接口。", L"Weasel Deployer",
+               MB_OK | MB_ICONERROR);
+    return 1;
+  }
+
+  AppendWeaselDeployerTrace(L"Configurator::UpdateUserPhrase before levers call");
+  const Bool ok = remove ? api->remove_user_phrase(schema_id.c_str(), code.c_str(),
+                                                   text.c_str())
+                         : api->add_user_phrase(schema_id.c_str(), code.c_str(),
+                                                text.c_str());
+  AppendWeaselDeployerTrace(std::wstring(L"Configurator::UpdateUserPhrase ok=") + (ok ? L"true" : L"false"));
+
+  CloseHandle(hMutex);
+  AppendWeaselDeployerTrace(L"Configurator::UpdateUserPhrase mutex closed");
+
+  if (!ok) {
+    const wchar_t* action = remove ? L"删词" : L"造词";
+    std::wstring message = std::wstring(L"执行") + action +
+                           L"失败。\n请检查 schema_id、编码和词条是否正确。";
+    MessageBox(NULL, message.c_str(), L"Weasel Deployer",
+               MB_OK | MB_ICONERROR);
+    return 1;
+  }
+
   return 0;
 }

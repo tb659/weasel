@@ -13,9 +13,9 @@ if exist env.bat call env.bat
 
 if not defined WEASEL_ROOT set WEASEL_ROOT=%SCRIPT_DIR%
 
-if not defined VERSION_MAJOR set VERSION_MAJOR=0
-if not defined VERSION_MINOR set VERSION_MINOR=17
-if not defined VERSION_PATCH set VERSION_PATCH=4
+if not defined VERSION_MAJOR set VERSION_MAJOR=1
+if not defined VERSION_MINOR set VERSION_MINOR=0
+if not defined VERSION_PATCH set VERSION_PATCH=0
 
 if not defined WEASEL_VERSION set WEASEL_VERSION=%VERSION_MAJOR%.%VERSION_MINOR%.%VERSION_PATCH%
 if not defined WEASEL_BUILD set WEASEL_BUILD=0
@@ -170,11 +170,23 @@ if %build_rime% == 1 (
     build_x64 dist_x64 lib_x64 ^
     build_Win32 dist_Win32 lib_Win32 ^
     deps\glog\build ^
+    deps\glog\build_x64 ^
+    deps\glog\build_Win32 ^
     deps\googletest\build ^
+    deps\googletest\build_x64 ^
+    deps\googletest\build_Win32 ^
     deps\leveldb\build ^
+    deps\leveldb\build_x64 ^
+    deps\leveldb\build_Win32 ^
     deps\marisa-trie\build ^
+    deps\marisa-trie\build_x64 ^
+    deps\marisa-trie\build_Win32 ^
     deps\opencc\build ^
-    deps\yaml-cpp\build ) do (
+    deps\opencc\build_x64 ^
+    deps\opencc\build_Win32 ^
+    deps\yaml-cpp\build ^
+    deps\yaml-cpp\build_x64 ^
+    deps\yaml-cpp\build_Win32 ) do (
       if exist %%a rd /s /q %%a
   )
 

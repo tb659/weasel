@@ -3,12 +3,26 @@
 #include "stdafx.h"
 #include <WeaselUtility.h>
 #include <fstream>
+#include <vector>
 #include "WeaselDeployer.h"
 #include "Configurator.h"
 
 CAppModule _Module;
 
 static int Run(LPTSTR lpCmdLine);
+
+static std::vector<std::wstring> GetCommandLineArgs() {
+  int argc = 0;
+  LPWSTR* argv = CommandLineToArgvW(GetCommandLineW(), &argc);
+  std::vector<std::wstring> args;
+  if (!argv)
+    return args;
+  for (int i = 1; i < argc; ++i) {
+    args.emplace_back(argv[i]);
+  }
+  LocalFree(argv);
+  return args;
+}
 
 int APIENTRY _tWinMain(HINSTANCE hInstance,
                        HINSTANCE hPrevInstance,
@@ -61,11 +75,15 @@ int APIENTRY _tWinMain(HINSTANCE hInstance,
 static int Run(LPTSTR lpCmdLine) {
   Configurator configurator;
   configurator.Initialize();
+  auto args = GetCommandLineArgs();
 
-  if (!wcscmp(L"/?", lpCmdLine) || !wcscmp(L"/help", lpCmdLine)) {
+  if (args.size() == 1 && (args[0] == L"/?" || args[0] == L"/help")) {
     WCHAR msg[1024] = {0};
     if (LoadString(GetModuleHandle(NULL), IDS_STR_HELP, msg,
                    sizeof(msg) / sizeof(TCHAR))) {
+      wcscat_s(msg,
+               L"\n/word /add <schema_id> <code> <text>"
+               L"\n/word /remove <schema_id> <code> <text>");
       MessageBox(NULL, msg, L"Weasel Deployer", MB_ICONINFORMATION | MB_OK);
     } else {
       MessageBox(NULL,
@@ -74,27 +92,46 @@ static int Run(LPTSTR lpCmdLine) {
                  L"/deploy		- Update Workspace\n"
                  L"/dict		- Manage dictionary\n"
                  L"/sync		- Sync user data\n"
-                 L"/install		- Install Weasel (Initial deployment)",
-                 L"Weasel Deployer", MB_ICONINFORMATION | MB_OK);
+                 L"/install		- Install Weasel (Initial deployment)\n"
+                 L"/word /add <schema_id> <code> <text>\n"
+                 L"/word /remove <schema_id> <code> <text>",
+                  L"Weasel Deployer", MB_ICONINFORMATION | MB_OK);
     }
     return 0;
   }
 
-  bool deployment_scheduled = !wcscmp(L"/deploy", lpCmdLine);
-  if (deployment_scheduled) {
+  if (args.size() == 1 && args[0] == L"/word") {
+    return configurator.CreateWord();
+  }
+
+  if (args.size() == 5 && args[0] == L"/word" &&
+      (args[1] == L"/add" || args[1] == L"/remove")) {
+    return configurator.UpdateUserPhrase(wtou8(args[2]), wtou8(args[3]),
+                                         wtou8(args[4]),
+                                         args[1] == L"/remove");
+  }
+
+  if (!args.empty() && args[0] == L"/word") {
+    MessageBox(NULL,
+               L"用法：\n"
+               L"WeaselDeployer.exe /word /add <schema_id> <code> <text>\n"
+               L"WeaselDeployer.exe /word /remove <schema_id> <code> <text>",
+               L"Weasel Deployer", MB_OK | MB_ICONINFORMATION);
+    return 1;
+  }
+
+  if (args.size() == 1 && args[0] == L"/deploy") {
     return configurator.UpdateWorkspace();
   }
 
-  bool dict_management = !wcscmp(L"/dict", lpCmdLine);
-  if (dict_management) {
+  if (args.size() == 1 && args[0] == L"/dict") {
     return configurator.DictManagement();
   }
 
-  bool sync_user_dict = !wcscmp(L"/sync", lpCmdLine);
-  if (sync_user_dict) {
+  if (args.size() == 1 && args[0] == L"/sync") {
     return configurator.SyncUserData();
   }
 
-  bool installing = !wcscmp(L"/install", lpCmdLine);
+  const bool installing = args.size() == 1 && args[0] == L"/install";
   return configurator.Run(installing);
 }
