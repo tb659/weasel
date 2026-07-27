@@ -11,7 +11,7 @@ if %errorlevel% neq 0 (
 echo 正在停止 WeaselServer...
 taskkill /f /im WeaselServer.exe 2>nul
 
-set "RIME_DIR=C:\Program Files\Rime\weasel-1.0.1"
+set "RIME_DIR=C:\Program Files\Rime\weasel-1.0.2"
 
 echo 正在复制新 WeaselSetup.exe...
 copy /Y output\WeaselSetup.exe "%RIME_DIR%\WeaselSetup.exe"
