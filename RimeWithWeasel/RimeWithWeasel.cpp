@@ -115,6 +115,8 @@ void RimeWithWeaselHandler::Initialize() {
   if (rime_api->start_maintenance(/*full_check = */ False)) {
     m_disabled = true;
     rime_api->join_maintenance_thread();
+    // 这里同步等待维护完成；结束后必须恢复按键处理。
+    m_disabled = false;
   }
 
   RimeConfig config = {NULL};
@@ -756,10 +758,10 @@ bool RimeWithWeaselHandler::_Respond(WeaselSessionId ipc_id, EatLine eat) {
   static const std::wstring Bool_wstring[] = {L"0", L"1"};
   if (rime_api->get_status(session_id, &status)) {
     is_composing = !!status.is_composing;
-    const auto user_predicting =
-        !!rime_api->get_option(session_id, "_user_predicting");
-    const auto user_prediction_visible =
-        !!rime_api->get_option(session_id, "_user_prediction_visible");
+    // 预测占位符只按实际 preedit 文本过滤。
+    // 不在响应热路径镜像 Lua 的瞬态预测状态，避免状态滞留隐藏正常组字。
+    const bool user_predicting = false;
+    const bool user_prediction_visible = false;
     actions.push_back("status");
     body.append(L"status.ascii_mode=")
         .append(Bool_wstring[!!status.is_ascii_mode])

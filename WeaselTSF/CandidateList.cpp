@@ -211,10 +211,7 @@ void CCandidateList::UpdateUI(const Context& ctx, const Status& status) {
   _ui->Update(ctx, status);
   _UpdateUIElement();
 
-  if (status.composing)
-    Show(_pbShow);
-  else
-    Show(FALSE);
+  Show(status.composing ? TRUE : FALSE);
 }
 
 void CCandidateList::UpdateStyle(const UIStyle& sty) {

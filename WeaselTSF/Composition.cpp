@@ -4,37 +4,17 @@
 #include "ResponseParser.h"
 #include "CandidateList.h"
 
-#include <fstream>
-
 namespace {
 
 bool ContainsPredictionPlaceholder(const weasel::Context& context) {
-  return context.preedit.str.find(L"zpredictz") != std::wstring::npos;
+  // 只抑制显式占位符；预测可见状态可能晚于占位符清除，
+  // 不能用它隐藏正常组字文本。
+  static constexpr wchar_t kPredictionPlaceholder[] = L"zpredictz";
+  return context.preedit.str.find(kPredictionPlaceholder) != std::wstring::npos;
 }
 
-bool ShouldSuppressPredictionPlaceholder(const weasel::Context& context,
-                                         const weasel::Status& status) {
-  if (status.user_prediction_visible || ContainsPredictionPlaceholder(context)) {
-    return true;
-  }
-  return false;
-}
-
-void TraceInlinePreedit(const weasel::Context& context,
-                        const std::wstring& preedit,
-                        bool suppressed) {
-  wchar_t buffer[512] = {};
-  swprintf_s(buffer,
-             L"[WeaselInline] preedit='%ls' len=%zu cand=%zu suppressed=%d\r\n",
-             preedit.c_str(), preedit.length(), context.cinfo.candies.size(),
-             suppressed ? 1 : 0);
-  OutputDebugStringW(buffer);
-
-  std::wofstream log(L"C:\\dev\\workspace\\android\\ime\\weasel\\output\\weasel-inline.log",
-                     std::ios::app);
-  if (log.is_open()) {
-    log << buffer;
-  }
+bool ShouldSuppressPredictionPlaceholder(const weasel::Context& context) {
+  return ContainsPredictionPlaceholder(context);
 }
 
 }  // namespace
@@ -288,12 +268,10 @@ class CInlinePreeditEditSession : public CEditSession {
   CInlinePreeditEditSession(com_ptr<WeaselTSF> pTextService,
                             com_ptr<ITfContext> pContext,
                             com_ptr<ITfComposition> pComposition,
-                            const std::shared_ptr<weasel::Context> context,
-                            const weasel::Status& status)
+                            const std::shared_ptr<weasel::Context> context)
       : CEditSession(pTextService, pContext),
         _pComposition(pComposition),
-        _context(context),
-        _status(status) {}
+        _context(context) {}
 
   /* ITfEditSession */
   STDMETHODIMP DoEditSession(TfEditCookie ec);
@@ -301,14 +279,12 @@ class CInlinePreeditEditSession : public CEditSession {
  private:
   com_ptr<ITfComposition> _pComposition;
   const std::shared_ptr<weasel::Context> _context;
-  const weasel::Status _status;
 };
 
 STDAPI CInlinePreeditEditSession::DoEditSession(TfEditCookie ec) {
   std::wstring preedit = _context->preedit.str;
   const bool suppress_prediction_placeholder =
-      ShouldSuppressPredictionPlaceholder(*_context, _status);
-  TraceInlinePreedit(*_context, preedit, suppress_prediction_placeholder);
+      ShouldSuppressPredictionPlaceholder(*_context);
   if (suppress_prediction_placeholder) {
     preedit.clear();
   }
@@ -357,8 +333,7 @@ BOOL WeaselTSF::_ShowInlinePreedit(
     const std::shared_ptr<weasel::Context> context) {
   com_ptr<CInlinePreeditEditSession> pEditSession;
   pEditSession.Attach(
-      new CInlinePreeditEditSession(this, pContext, _pComposition, context,
-                                    _status));
+      new CInlinePreeditEditSession(this, pContext, _pComposition, context));
   if (pEditSession != NULL) {
     HRESULT hr;
     pContext->RequestEditSession(_tfClientId, pEditSession,

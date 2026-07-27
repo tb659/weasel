@@ -53,31 +53,18 @@ static inline void ReconfigRoundInfo(IsToRoundStruct& rd,
 namespace {
 
 bool ContainsPredictionPlaceholder(const weasel::Context& ctx) {
-  return ctx.preedit.str.find(L"zpredictz") != std::wstring::npos;
-}
-
-void TracePredictionUiState(const weasel::Context& ctx,
-                            const weasel::Status& status,
-                            BYTE candidate_count,
-                            bool hide_candidates) {
-  if (!status.user_prediction_visible) {
-    return;
-  }
-  wchar_t buffer[256] = {};
-  swprintf_s(buffer,
-             L"[WeaselPredict] composing=%d cand=%u hide=%d preedit_empty=%d aux_empty=%d\r\n",
-             status.composing ? 1 : 0, candidate_count,
-             hide_candidates ? 1 : 0, ctx.preedit.empty() ? 1 : 0,
-             ctx.aux.empty() ? 1 : 0);
-  OutputDebugStringW(buffer);
+  // 只抑制显式占位符；prediction-visible 是 Lua 瞬态状态，
+  // 正常组字期间可能滞留。
+  static constexpr wchar_t kPredictionPlaceholder[] = L"zpredictz";
+  return ctx.preedit.str.find(kPredictionPlaceholder) != std::wstring::npos;
 }
 
 bool ShouldSuppressPredictionPlaceholder(const weasel::Context& ctx,
-                                         const weasel::Status& status) {
+                                          const weasel::Status& status) {
   if (!status.composing || ctx.cinfo.empty()) {
     return false;
   }
-  return status.user_prediction_visible || ContainsPredictionPlaceholder(ctx);
+  return ContainsPredictionPlaceholder(ctx);
 }
 
 }  // namespace
@@ -193,7 +180,6 @@ void WeaselPanel::Refresh() {
       (m_style.inline_preedit && m_candidateCount == 0) && !show_tips;
   hide_candidates = inline_no_candidates ||
                     (margin_negative && !show_tips && !show_schema_menu);
-  TracePredictionUiState(m_ctx, m_status, m_candidateCount, hide_candidates);
 
   // only RedrawWindow if no need to hide candidates window, or
   // inline_no_candidates
