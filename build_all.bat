@@ -3,6 +3,7 @@ call "C:\Program Files\Microsoft Visual Studio\Community\VC\Auxiliary\Build\vcva
 cd /d C:\dev\workspace\android\ime\weasel
 
 :: Kill WeaselServer before building to avoid file lock
+echo 正在停止 WeaselServer...
 taskkill /f /im WeaselServer.exe 2>nul
 
 :: Build x64 Release (skip rime - already built)

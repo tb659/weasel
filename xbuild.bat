@@ -126,6 +126,8 @@ cd /d %WEASEL_ROOT%
 if exist output\weaselserver.exe (
   output\weaselserver.exe /q
 )
+
+echo 正在停止 WeaselServer...
 taskkill /f /im WeaselServer.exe 2>nul
 
 rem build booost
