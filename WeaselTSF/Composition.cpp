@@ -7,8 +7,8 @@
 namespace {
 
 bool ContainsPredictionPlaceholder(const weasel::Context& context) {
-  // 只抑制显式占位符；预测可见状态可能晚于占位符清除，
-  // 不能用它隐藏正常组字文本。
+  // Only suppress the explicit placeholder. The prediction-visible state may
+  // outlive the placeholder and must not hide normal composing text.
   static constexpr wchar_t kPredictionPlaceholder[] = L"zpredictz";
   return context.preedit.str.find(kPredictionPlaceholder) != std::wstring::npos;
 }

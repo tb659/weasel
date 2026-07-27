@@ -115,7 +115,7 @@ void RimeWithWeaselHandler::Initialize() {
   if (rime_api->start_maintenance(/*full_check = */ False)) {
     m_disabled = true;
     rime_api->join_maintenance_thread();
-    // 这里同步等待维护完成；结束后必须恢复按键处理。
+    // Maintenance is synchronous here; resume key handling after it finishes.
     m_disabled = false;
   }
 
@@ -758,8 +758,9 @@ bool RimeWithWeaselHandler::_Respond(WeaselSessionId ipc_id, EatLine eat) {
   static const std::wstring Bool_wstring[] = {L"0", L"1"};
   if (rime_api->get_status(session_id, &status)) {
     is_composing = !!status.is_composing;
-    // 预测占位符只按实际 preedit 文本过滤。
-    // 不在响应热路径镜像 Lua 的瞬态预测状态，避免状态滞留隐藏正常组字。
+    // Prediction placeholder filtering is based on the actual preedit text.
+    // Do not mirror transient Lua-only prediction state in the response path;
+    // stale state can hide normal composing text.
     const bool user_predicting = false;
     const bool user_prediction_visible = false;
     actions.push_back("status");
