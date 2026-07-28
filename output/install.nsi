@@ -312,7 +312,7 @@ program_files:
   WriteRegStr HKLM "${REG_UNINST_KEY}" "DisplayIcon" '"$INSTDIR\WeaselServer.exe"'
   WriteRegStr HKLM "${REG_UNINST_KEY}" "DisplayVersion" "${WEASEL_VERSION}.${WEASEL_BUILD}"
   WriteRegStr HKLM "${REG_UNINST_KEY}" "UninstallString" '"$INSTDIR\uninstall.exe"'
-  WriteRegStr HKLM "${REG_UNINST_KEY}" "Publisher" "式恕堂"
+  WriteRegStr HKLM "${REG_UNINST_KEY}" "Publisher" "tbagr"
   WriteRegStr HKLM "${REG_UNINST_KEY}" "URLInfoAbout" "https://rime.im/"
   WriteRegStr HKLM "${REG_UNINST_KEY}" "HelpLink" "https://rime.im/docs/"
   WriteRegDWORD HKLM "${REG_UNINST_KEY}" "NoModify" 1

@@ -11,7 +11,20 @@ if %errorlevel% neq 0 (
 echo 正在停止 WeaselServer...
 taskkill /f /im WeaselServer.exe 2>nul
 
-set "RIME_DIR=C:\Program Files\Rime\weasel-1.0.2"
+:: Auto-detect install dir from registry (written by WeaselSetup)
+set RIME_DIR=
+for /f "skip=1 tokens=2*" %%a in ('reg query "HKLM\SOFTWARE\Rime\Weasel" /v "WeaselRoot" 2^>nul') do set "RIME_DIR=%%b"
+if not defined RIME_DIR (
+  for /f "skip=1 tokens=2*" %%a in ('reg query "HKLM\SOFTWARE\WOW6432Node\Rime\Weasel" /v "WeaselRoot" 2^>nul') do set "RIME_DIR=%%b"
+)
+if not defined RIME_DIR (
+  echo 错误: 未找到注册表 HKLM\Software\Rime\Weasel\WeaselRoot
+  echo 请确认已安装小狼毫，或手动设置 RIME_DIR。
+  pause
+  exit /b 1
+)
+
+echo 安装目录: %RIME_DIR%
 
 echo 正在复制新 WeaselSetup.exe...
 copy /Y output\WeaselSetup.exe "%RIME_DIR%\WeaselSetup.exe"

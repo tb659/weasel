@@ -1,13 +1,22 @@
 @echo off
 
-echo ========================================
-echo  Weasel Pack Script v1.0.0
-echo ========================================
-echo.
+echo Stopping WeaselServer...
+taskkill /f /im WeaselServer.exe 2>nul
 
 set SCRIPT_DIR=%~dp0
 if "%SCRIPT_DIR:~-1%"=="\" set SCRIPT_DIR=%SCRIPT_DIR:~0,-1%
 cd /d "%SCRIPT_DIR%" || ( echo Cannot cd to %SCRIPT_DIR% & pause & exit /b 1 )
+
+set VERSION_MAJOR=1
+set VERSION_MINOR=0
+set VERSION_PATCH=2
+call version.bat
+
+echo ========================================
+echo  Weasel Pack Script v%WEASEL_VERSION%
+echo ========================================
+echo.
+echo Version: %WEASEL_VERSION%  Build: %WEASEL_BUILD% & echo.
 
 if not exist env.bat ( echo ERROR: env.bat not found & pause & exit /b 1 )
 call env.bat
@@ -15,15 +24,6 @@ call env.bat
 if not defined BOOST_ROOT ( echo ERROR: BOOST_ROOT not set & pause & exit /b 1 )
 if not exist "%BOOST_ROOT%\boost" ( echo ERROR: Boost not found at %BOOST_ROOT% & pause & exit /b 1 )
 echo BOOST_ROOT=%BOOST_ROOT% & echo.
-
-set VERSION_MAJOR=1
-set VERSION_MINOR=0
-set VERSION_PATCH=2
-set WEASEL_VERSION=%VERSION_MAJOR%.%VERSION_MINOR%.%VERSION_PATCH%
-set WEASEL_BUILD=0
-set PRODUCT_VERSION=%WEASEL_VERSION%.%WEASEL_BUILD%
-set FILE_VERSION=%WEASEL_VERSION%.%WEASEL_BUILD%
-echo Version: %WEASEL_VERSION%  Build: %WEASEL_BUILD% & echo.
 
 rem --- locate VS ---
 set VS_WHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe
@@ -37,26 +37,21 @@ echo Visual Studio: %VS_INSTALL_DIR% & echo.
 
 setlocal enabledelayedexpansion
 
-rem Prevent PDB file contention during parallel compilation
 set CL=/FS
 
 set STASH=build dist deps\glog\build deps\googletest\build deps\leveldb\build deps\marisa-trie\build deps\opencc\build deps\yaml-cpp\build
 
-rem stash_pop: restore _%1 dirs to bare names
 for %%d in (%STASH%) do (
   if exist "%SCRIPT_DIR%\librime\%%d_%1" (
     if exist "%SCRIPT_DIR%\librime\%%d" rmdir /s /q "%SCRIPT_DIR%\librime\%%d"
     move "%SCRIPT_DIR%\librime\%%d_%1" "%SCRIPT_DIR%\librime\%%d" >nul
   )
 )
-rem then clean the build/dist that will be rebuilt
 if exist "%SCRIPT_DIR%\librime\build" rmdir /s /q "%SCRIPT_DIR%\librime\build"
 if exist "%SCRIPT_DIR%\librime\dist" rmdir /s /q "%SCRIPT_DIR%\librime\dist"
 
-rem ===== STEP 1: librime x64 =====
 echo [1/4] librime x64 ...
 cd /d "%SCRIPT_DIR%\librime"
-rem restore x64 dep caches
 for %%d in (%STASH%) do (
   if exist "%SCRIPT_DIR%\librime\%%d_x64" (
     if exist "%SCRIPT_DIR%\librime\%%d" rmdir /s /q "%SCRIPT_DIR%\librime\%%d"
@@ -75,7 +70,6 @@ if errorlevel 1 ( echo librime deps x64 FAILED & pause & exit /b 1 )
 call build.bat release
 if errorlevel 1 ( echo librime x64 build FAILED & pause & exit /b 1 )
 
-rem stash x64 build dirs
 for %%d in (%STASH%) do (
   if exist "%SCRIPT_DIR%\librime\%%d" (
     if exist "%SCRIPT_DIR%\librime\%%d_x64" rmdir /s /q "%SCRIPT_DIR%\librime\%%d_x64"
@@ -91,10 +85,8 @@ copy /Y "%SCRIPT_DIR%\librime\dist_x64\lib\rime.dll" "%SCRIPT_DIR%\output\" >nul
 echo [1/4] librime x64 done
 echo.
 
-rem ===== STEP 2: librime Win32 =====
 echo [2/4] librime Win32 ...
 cd /d "%SCRIPT_DIR%\librime"
-rem restore Win32 dep caches
 for %%d in (%STASH%) do (
   if exist "%SCRIPT_DIR%\librime\%%d_Win32" (
     if exist "%SCRIPT_DIR%\librime\%%d" rmdir /s /q "%SCRIPT_DIR%\librime\%%d"
@@ -113,7 +105,6 @@ if errorlevel 1 ( echo librime deps Win32 FAILED & pause & exit /b 1 )
 call build.bat release
 if errorlevel 1 ( echo librime Win32 build FAILED & pause & exit /b 1 )
 
-rem stash Win32 build dirs
 for %%d in (%STASH%) do (
   if exist "%SCRIPT_DIR%\librime\%%d" (
     if exist "%SCRIPT_DIR%\librime\%%d_Win32" rmdir /s /q "%SCRIPT_DIR%\librime\%%d_Win32"
@@ -128,21 +119,45 @@ copy /Y "%SCRIPT_DIR%\librime\dist_Win32\lib\rime.dll" "%SCRIPT_DIR%\output\Win3
 echo [2/4] librime Win32 done
 echo.
 
-rem ===== STEP 3: Weasel solution =====
 echo [3/4] Weasel solution ...
+
+set CL=/FS
+
 call "%VARS_BAT%" -arch=x64 -host_arch=x64 >nul
 cd /d "%SCRIPT_DIR%"
 
 cscript.exe render.js weasel.props BOOST_ROOT PLATFORM_TOOLSET VERSION_MAJOR VERSION_MINOR VERSION_PATCH PRODUCT_VERSION FILE_VERSION >nul
 
-msbuild weasel.sln /t:Rebuild /p:Configuration=Release /p:Platform=x64 /fl2 /m
+:: Kill WeaselServer before x64 build
+:kill_x64
+net stop WeaselInputService 2>nul
+taskkill /f /im WeaselServer.exe 2>nul
+timeout /t 1 /nobreak >nul
+del /f /q output\WeaselServer.exe 2>nul
+if exist output\WeaselServer.exe (
+  powershell -Command "Stop-Process -Force -Name WeaselServer -ErrorAction SilentlyContinue; Start-Sleep 1; Remove-Item 'output\WeaselServer.exe' -Force -ErrorAction SilentlyContinue" >nul
+  if exist output\WeaselServer.exe goto kill_x64
+)
+
+msbuild weasel.sln /t:Build /p:Configuration=Release /p:Platform=x64 /fl2 /m
 if errorlevel 1 ( echo Weasel x64 build FAILED & pause & exit /b 1 )
-msbuild weasel.sln /t:Rebuild /p:Configuration=Release /p:Platform=Win32 /fl1 /m
+
+:: Kill WeaselServer before Win32 build
+:kill_Win32
+net stop WeaselInputService 2>nul
+taskkill /f /im WeaselServer.exe 2>nul
+timeout /t 1 /nobreak >nul
+del /f /q output\Win32\WeaselServer.exe 2>nul
+if exist output\Win32\WeaselServer.exe (
+  powershell -Command "Stop-Process -Force -Name WeaselServer -ErrorAction SilentlyContinue; Start-Sleep 1; Remove-Item 'output\Win32\WeaselServer.exe' -Force -ErrorAction SilentlyContinue" >nul
+  if exist output\Win32\WeaselServer.exe goto kill_Win32
+)
+
+msbuild weasel.sln /t:Build /p:Configuration=Release /p:Platform=Win32 /fl1 /m
 if errorlevel 1 ( echo Weasel Win32 build FAILED & pause & exit /b 1 )
 echo [3/4] Weasel build done
 echo.
 
-rem ===== STEP 4: NSIS installer =====
 echo [4/4] NSIS installer ...
 cd /d "%SCRIPT_DIR%"
 if not exist output\archives mkdir output\archives
