@@ -39,11 +39,12 @@ echo.
 
 if not defined BJAM_TOOLSET (
   rem the number actually means platform toolset, not %VisualStudioVersion%
-  set BJAM_TOOLSET=msvc-14.2
+  set BJAM_TOOLSET=msvc-14.5
 )
 
 if not defined PLATFORM_TOOLSET (
-  set PLATFORM_TOOLSET=v142
+  rem VS 2026 = v145; VS 2022 = v143
+  set PLATFORM_TOOLSET=v145
 )
 
 if defined DEVTOOLS_PATH set PATH=%DEVTOOLS_PATH%%PATH%
@@ -208,11 +209,15 @@ if defined SDKVER set build_sdk_option=/p:WindowsTargetPlatformVersion=%SDKVER%
 if not defined SDKVER set build_sdk_option=
 
 if %build_arm64% == 1 (
-
-  "%MSBUILD_EXE%" weasel.sln %build_option% /p:Configuration=%build_config% /p:Platform="ARM" /fl6 %build_sdk_option%
-  if errorlevel 1 goto error
-  "%MSBUILD_EXE%" weasel.sln %build_option% /p:Configuration=%build_config% /p:Platform="ARM64" /fl5 %build_sdk_option%
-  if errorlevel 1 goto error
+  rem VS 2022 (v143) supports ARM/ARM64; VS 2026 (v145) does not
+  if "%PLATFORM_TOOLSET%" geq "v145" (
+    echo Platform toolset %PLATFORM_TOOLSET% does not support ARM/ARM64 builds, skipping.
+  ) else (
+    "%MSBUILD_EXE%" weasel.sln %build_option% /p:Configuration=%build_config% /p:Platform="ARM" /fl6 %build_sdk_option%
+    if errorlevel 1 goto error
+    "%MSBUILD_EXE%" weasel.sln %build_option% /p:Configuration=%build_config% /p:Platform="ARM64" /fl5 %build_sdk_option%
+    if errorlevel 1 goto error
+  )
 )
 
 "%MSBUILD_EXE%" weasel.sln %build_option% /p:Configuration=%build_config% /p:Platform="x64" /fl2 %build_sdk_option%
@@ -250,7 +255,6 @@ rem build boost
     --with-locale^
     --with-regex^
     --with-serialization^
-    --with-system^
     --with-thread^
     define=BOOST_USE_WINAPI_VERSION=0x0603^
     toolset=%BJAM_TOOLSET%^
@@ -279,8 +283,20 @@ rem build boost
   cd /d %BOOST_ROOT%
   if not exist b2.exe call bootstrap.bat
   if errorlevel 1 goto error
+  rem Delete any .obj left corrupted by previous failed 32-bit link.exe
+  if exist "bin.v2\libs\serialization\build" (
+    del /s /q "bin.v2\libs\serialization\build\*grammar*.obj" 2>nul
+  )
   b2 %BJAM_OPTIONS_X86% stage %BOOST_COMPILED_LIBS%
-  if errorlevel 1 goto error
+  if errorlevel 1 (
+    echo.
+    echo Boost x86 build failed.  Cleaning corrupted intermediate files and retrying once...
+    if exist "bin.v2\libs\serialization\build" (
+      del /s /q "bin.v2\libs\serialization\build\*grammar*.obj" 2>nul
+    )
+    b2 %BJAM_OPTIONS_X86% stage %BOOST_COMPILED_LIBS%
+    if errorlevel 1 goto error
+  )
   b2 %BJAM_OPTIONS_X64% stage %BOOST_COMPILED_LIBS%
   if errorlevel 1 goto error
   
@@ -297,8 +313,9 @@ rem -------------------------------------------------------------------------
   set VS_ARCH=%~1
   if "%VS_ARCH%"=="" set VS_ARCH=x64
   if exist "%ProgramFiles%\Microsoft Visual Studio\Community\Common7\Tools\VsDevCmd.bat" (
-    call "%ProgramFiles%\Microsoft Visual Studio\Community\Common7\Tools\VsDevCmd.bat" -arch=%VS_ARCH% -host_arch=x64 >nul
-    exit /b %errorlevel%
+    call "%ProgramFiles%\Microsoft Visual Studio\Community\Common7\Tools\VsDevCmd.bat" -arch=%VS_ARCH% -host_arch=x64
+    if errorlevel 1 exit /b 1
+    exit /b 0
   )
   echo Error: VsDevCmd.bat not found.
   exit /b 1

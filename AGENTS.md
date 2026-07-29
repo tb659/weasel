@@ -80,3 +80,7 @@ GitHub Actions（`.github/workflows/ci.yml`）：
 - `UIStyle` 序列化对版本敏感——添加字段需同步更新 `serialize` 模板
 - ARM64 构建使用 `arm64x_wrapper/`——独立构建步骤
 - 子模块 `librime` 自行构建依赖（leveldb、opencc 等）——clean 构建会缓存 librime 构建目录
+
+##
+
+- 使用中文回复用户
