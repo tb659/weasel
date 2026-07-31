@@ -103,6 +103,15 @@ bool ClientImpl::ChangePage(bool backward) {
   return ret != 0;
 }
 
+bool ClientImpl::PredictRequest(const std::wstring& anchor) {
+  if (!_Active() || anchor.empty())
+    return false;
+  // anchor 通过 body 传输（WriteBody 保证大小可靠）
+  channel.WriteBody(anchor.c_str(), anchor.size());
+  LRESULT ret = _SendMessage(WEASEL_IPC_PREDICT_REQUEST, 0, session_id);
+  return ret != 0;
+}
+
 void ClientImpl::UpdateInputPosition(RECT const& rc) {
   if (!_Active())
     return;
@@ -183,10 +192,12 @@ bool ClientImpl::GetResponseData(ResponseHandler const& handler) {
 }
 
 bool ClientImpl::_WriteClientInfo() {
-  channel << L"action=session\n";
-  channel << L"session.client_app=" << app_name.c_str() << L"\n";
-  channel << L"session.client_type=" << (is_ime ? L"ime" : L"tsf") << L"\n";
-  channel << L".\n";
+  std::wstring info = L"action=session\n";
+  info += std::wstring(L"session.client_app=") + app_name + L"\n";
+  info += std::wstring(L"session.client_type=") + (is_ime ? L"ime" : L"tsf") +
+          L"\n";
+  info += L".\n";
+  channel.WriteBody(info.c_str(), info.size());
   return true;
 }
 
@@ -242,6 +253,10 @@ bool Client::HighlightCandidateOnCurrentPage(size_t index) {
 
 bool Client::ChangePage(bool backward) {
   return m_pImpl->ChangePage(backward);
+}
+
+bool Client::PredictRequest(const std::wstring& anchor) {
+  return m_pImpl->PredictRequest(anchor);
 }
 
 void Client::UpdateInputPosition(RECT const& rc) {

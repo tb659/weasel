@@ -358,6 +358,17 @@ DWORD ServerImpl::OnChangePage(WEASEL_IPC_COMMAND uMsg,
   return 0;
 }
 
+DWORD ServerImpl::OnPredictRequest(WEASEL_IPC_COMMAND uMsg,
+                                   DWORD wParam,
+                                   DWORD lParam) {
+  if (!m_pRequestHandler)
+    return 0;
+  wchar_t* p = reinterpret_cast<LPWSTR>(channel->ReceiveBuffer());
+  std::wstring anchor(p);
+  m_pRequestHandler->PredictRequest(anchor, lParam);
+  return 1;
+}
+
 #define MAP_PIPE_MSG_HANDLE(__msg, __wParam, __lParam) \
   {                                                    \
     auto lParam = __lParam;                            \
@@ -397,6 +408,7 @@ void ServerImpl::HandlePipeMessage(PipeMessage pipe_msg, _Resp resp) {
                   OnHighlightCandidateOnCurrentPage);
   PIPE_MSG_HANDLE(WEASEL_IPC_CHANGE_PAGE, OnChangePage);
   PIPE_MSG_HANDLE(WEASEL_IPC_TRAY_COMMAND, OnCommand);
+  PIPE_MSG_HANDLE(WEASEL_IPC_PREDICT_REQUEST, OnPredictRequest);
   END_MAP_PIPE_MSG_HANDLE(result);
 
   resp(result);

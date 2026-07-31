@@ -46,12 +46,19 @@ STDAPI WeaselTSF::OnEndEdit(ITfContext* pContext,
   }
 
   /* text modification? */
+  BOOL fTextChanged = FALSE;
   if (pEditRecord->GetTextAndPropertyUpdates(TF_GTP_INCL_TEXT, NULL, 0,
                                              &pEnumTextChanges) == S_OK) {
     if (pEnumTextChanges->Next(1, &pRange, NULL) == S_OK) {
+      fTextChanged = TRUE;
       pRange->Release();
     }
     pEnumTextChanges->Release();
+  }
+
+  /* backspace prediction: text or caret changed while not composing */
+  if (fSelectionChanged || fTextChanged) {
+    _TriggerBackspacePredict(pContext, ecReadOnly);
   }
   return S_OK;
 }

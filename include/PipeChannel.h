@@ -1,5 +1,6 @@
 #pragma once
 #include <string>
+#include <sstream>
 #include <memory>
 #include <windows.h>
 #include <boost/interprocess/streams/bufferstream.hpp>
@@ -16,9 +17,12 @@ class PipeChannelBase {
     std::unique_ptr<char[]> buffer;
     std::unique_ptr<Stream> write_stream;
     bool has_body;
+    size_t body_size;  // body 实际字节数（WriteBody 设置）
 
     ChannelContext(size_t bs)
-        : buffer(std::make_unique<char[]>(bs)), has_body(false) {}
+        : buffer(std::make_unique<char[]>(bs)),
+          has_body(false),
+          body_size(0) {}
   };
 
   PipeChannelBase(std::wstring&& pn_cmd, size_t bs, SECURITY_ATTRIBUTES* s);
@@ -102,12 +106,25 @@ class PipeChannel : public PipeChannelBase {
     _FinalizePipe(*phandle);
   }
 
-  /* Write data to buffer */
-
+  /* Write data to buffer (append semantics, multiple << calls concatenate) */
   template <typename _TyWrite>
   void Write(_TyWrite cnt) {
-    _GetContext()->has_body = true;
-    _BufferWriteStream() << cnt;
+    std::wstringstream ss;
+    ss << cnt;
+    const std::wstring& s = ss.str();
+    if (s.empty())
+      return;
+    auto ctx = _GetContext();
+    size_t offset = ctx->body_size / sizeof(wchar_t);
+    char* pbuff = ctx->buffer.get() + _MsgSize;
+    if (offset == 0)
+      memset(pbuff, 0, buff_size - _MsgSize);
+    size_t bytes = s.size() * sizeof(wchar_t);
+    if (offset * sizeof(wchar_t) + bytes <= buff_size - _MsgSize) {
+      memcpy(pbuff + offset * sizeof(wchar_t), s.c_str(), bytes);
+      ctx->body_size += bytes;
+    }
+    ctx->has_body = true;
   }
 
   /* Write data to buffer */
@@ -115,6 +132,18 @@ class PipeChannel : public PipeChannelBase {
   PipeChannel& operator<<(_TyWrite cnt) {
     Write(cnt);
     return *this;
+  }
+
+  /* 手动写入 body 数据（替换式，从 body 区起始位置写入） */
+  void WriteBody(const wchar_t* data, size_t wchar_count) {
+    auto ctx = _GetContext();
+    char* pbuff = ctx->buffer.get() + _MsgSize;
+    memset(pbuff, 0, buff_size - _MsgSize);
+    if (data && wchar_count > 0) {
+      memcpy(pbuff, data, wchar_count * sizeof(wchar_t));
+    }
+    ctx->has_body = true;
+    ctx->body_size = wchar_count * sizeof(wchar_t);
   }
 
   _TyRes Transact(Msg& msg) {
@@ -127,6 +156,7 @@ class PipeChannel : public PipeChannelBase {
   void ClearBufferStream() {
     auto ctx = _GetContext();
     ctx->has_body = false;
+    ctx->body_size = 0;
     if (ctx->write_stream != nullptr) {
       ctx->write_stream.reset(nullptr);
     }
@@ -134,7 +164,9 @@ class PipeChannel : public PipeChannelBase {
 
   char* SendBuffer() const { return _GetContext()->buffer.get() + _MsgSize; }
 
-  char* ReceiveBuffer() const { return _GetContext()->buffer.get() + _ResSize; }
+  // body 区起点：_Receive 在消息模式下缓冲不足时会先部分读取（头进入
+  // 调用方提供的 msg/result），第二次 ReadFile 把剩余 body 读入 buffer[0]
+  char* ReceiveBuffer() const { return _GetContext()->buffer.get(); }
 
   template <typename _TyHandler>
   bool HandleResponseData(_TyHandler const& handler) {
@@ -154,13 +186,7 @@ class PipeChannel : public PipeChannelBase {
     DWORD lwritten = 0;
 
     *reinterpret_cast<Msg*>(pbuff) = msg;
-    size_t body_bytes = 0;
-    if (ctx->has_body && ctx->write_stream) {
-      std::streampos pos = ctx->write_stream->tellp();
-      if (pos != std::streampos(-1)) {
-        body_bytes = static_cast<size_t>(pos) * sizeof(wchar_t);
-      }
-    }
+    size_t body_bytes = ctx->has_body ? ctx->body_size : 0;
     size_t data_sz = ctx->has_body ? (_MsgSize + body_bytes) : _MsgSize;
     if (data_sz > buff_size)
       data_sz = buff_size;

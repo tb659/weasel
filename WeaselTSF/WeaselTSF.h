@@ -182,6 +182,15 @@ class WeaselTSF : public ITfTextInputProcessorEx,
 
   BOOL _InsertText(com_ptr<ITfContext> pContext, const std::wstring& ext);
 
+  /* Backspace prediction */
+  void _TriggerBackspacePredict(ITfContext* pContext, TfEditCookie ec);
+  std::wstring _GetCaretPrecedingText(ITfContext* pContext,
+                                      TfEditCookie ec,
+                                      size_t max_cjk_chars);
+  void _WritePredictRequestFile(const std::wstring& anchor);
+  void _SendPredictPlaceholderKeys();
+  void _SetLastCommitTick();
+
   void _DeleteCandidateList();
 
   BOOL _InitCompartment();
@@ -233,4 +242,10 @@ class WeaselTSF : public ITfTextInputProcessorEx,
   BOOL _async_edit = false;
   BOOL _committed = false;
   BOOL _isToOpenClose = false;
+
+  /* Backspace prediction state */
+  DWORD _last_commit_tick = 0;
+  DWORD _last_predict_tick = 0;
+  std::wstring _last_predict_anchor;
+  std::wstring _composing_anchor;
 };

@@ -122,7 +122,7 @@ if exist output\weaselserver.exe (
   output\weaselserver.exe /q
 )
 
-echo 正在停止 WeaselServer...
+echo Stopping WeaselServer...
 taskkill /f /im WeaselServer.exe 2>nul
 
 rem build booost
