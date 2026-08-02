@@ -226,13 +226,18 @@ if errorlevel 1 goto error
 if errorlevel 1 goto error
 
 if %build_arm64% == 1 (
-  pushd arm64x_wrapper
-  call build.bat
-  if errorlevel 1 goto error
-  popd
+  rem VS 2022 (v143) supports ARM/ARM64; VS 2026 (v145) does not
+  if "%PLATFORM_TOOLSET%" geq "v145" (
+    echo Platform toolset %PLATFORM_TOOLSET% does not support ARM/ARM64 builds, skipping arm64x_wrapper.
+  ) else (
+    pushd arm64x_wrapper
+    call build.bat
+    if errorlevel 1 goto error
+    popd
 
-  copy arm64x_wrapper\weaselARM64X.dll output
-  if errorlevel 1 goto error
+    copy arm64x_wrapper\weaselARM64X.dll output
+    if errorlevel 1 goto error
+  )
 )
 
 if %build_installer% == 1 (

@@ -7,9 +7,9 @@ set SCRIPT_DIR=%~dp0
 if "%SCRIPT_DIR:~-1%"=="\" set SCRIPT_DIR=%SCRIPT_DIR:~0,-1%
 cd /d "%SCRIPT_DIR%" || ( echo Cannot cd to %SCRIPT_DIR% & pause & exit /b 1 )
 
-set VERSION_MAJOR=1
-set VERSION_MINOR=0
-set VERSION_PATCH=2
+if not exist env.bat ( echo ERROR: env.bat not found & pause & exit /b 1 )
+call env.bat
+
 call version.bat
 
 echo ========================================
@@ -17,9 +17,6 @@ echo  Weasel Pack Script v%WEASEL_VERSION%
 echo ========================================
 echo.
 echo Version: %WEASEL_VERSION%  Build: %WEASEL_BUILD% & echo.
-
-if not exist env.bat ( echo ERROR: env.bat not found & pause & exit /b 1 )
-call env.bat
 
 if not defined BOOST_ROOT ( echo ERROR: BOOST_ROOT not set & pause & exit /b 1 )
 if not exist "%BOOST_ROOT%\boost" ( echo ERROR: Boost not found at %BOOST_ROOT% & pause & exit /b 1 )
