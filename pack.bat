@@ -3,11 +3,14 @@
 echo Stopping WeaselServer...
 taskkill /f /im WeaselServer.exe 2>nul
 
+set START_FILE=%TEMP%\weasel_build_start.txt
+powershell -NoProfile -Command "(Get-Date).ToString('o') | Set-Content -Encoding ascii '%START_FILE%'"
+
 set SCRIPT_DIR=%~dp0
 if "%SCRIPT_DIR:~-1%"=="\" set SCRIPT_DIR=%SCRIPT_DIR:~0,-1%
-cd /d "%SCRIPT_DIR%" || ( echo Cannot cd to %SCRIPT_DIR% & pause & exit /b 1 )
+cd /d "%SCRIPT_DIR%" || ( echo Cannot cd to %SCRIPT_DIR% & call :show_elapsed & pause & exit /b 1 )
 
-if not exist env.bat ( echo ERROR: env.bat not found & pause & exit /b 1 )
+if not exist env.bat ( echo ERROR: env.bat not found & call :show_elapsed & pause & exit /b 1 )
 call env.bat
 
 call version.bat
@@ -18,18 +21,18 @@ echo ========================================
 echo.
 echo Version: %WEASEL_VERSION%  Build: %WEASEL_BUILD% & echo.
 
-if not defined BOOST_ROOT ( echo ERROR: BOOST_ROOT not set & pause & exit /b 1 )
-if not exist "%BOOST_ROOT%\boost" ( echo ERROR: Boost not found at %BOOST_ROOT% & pause & exit /b 1 )
+if not defined BOOST_ROOT ( echo ERROR: BOOST_ROOT not set & call :show_elapsed & pause & exit /b 1 )
+if not exist "%BOOST_ROOT%\boost" ( echo ERROR: Boost not found at %BOOST_ROOT% & call :show_elapsed & pause & exit /b 1 )
 echo BOOST_ROOT=%BOOST_ROOT% & echo.
 
 rem --- locate VS ---
 set VS_WHERE=%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe
 if not exist "%VS_WHERE%" set VS_WHERE=%ProgramFiles%\Microsoft Visual Studio\Installer\vswhere.exe
-if not exist "%VS_WHERE%" ( echo ERROR: vswhere.exe not found & pause & exit /b 1 )
+if not exist "%VS_WHERE%" ( echo ERROR: vswhere.exe not found & call :show_elapsed & pause & exit /b 1 )
 for /f "usebackq tokens=*" %%i in (`"%VS_WHERE%" -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath`) do set VS_INSTALL_DIR=%%i
-if not defined VS_INSTALL_DIR ( echo ERROR: Visual Studio not found & pause & exit /b 1 )
+if not defined VS_INSTALL_DIR ( echo ERROR: Visual Studio not found & call :show_elapsed & pause & exit /b 1 )
 set VARS_BAT=%VS_INSTALL_DIR%\Common7\Tools\VsDevCmd.bat
-if not exist "%VARS_BAT%" ( echo ERROR: VsDevCmd.bat not found & pause & exit /b 1 )
+if not exist "%VARS_BAT%" ( echo ERROR: VsDevCmd.bat not found & call :show_elapsed & pause & exit /b 1 )
 echo Visual Studio: %VS_INSTALL_DIR% & echo.
 
 setlocal enabledelayedexpansion
@@ -60,12 +63,12 @@ if exist dist rmdir /s /q dist
 if exist lib rmdir /s /q lib
 
 call "%VARS_BAT%" -arch=x64 -host_arch=x64 >nul
-if errorlevel 1 ( echo VsDevCmd x64 failed & pause & exit /b 1 )
+if errorlevel 1 ( echo VsDevCmd x64 failed & call :show_elapsed & pause & exit /b 1 )
 
 call build.bat deps release
-if errorlevel 1 ( echo librime deps x64 FAILED & pause & exit /b 1 )
+if errorlevel 1 ( echo librime deps x64 FAILED & call :show_elapsed & pause & exit /b 1 )
 call build.bat release
-if errorlevel 1 ( echo librime x64 build FAILED & pause & exit /b 1 )
+if errorlevel 1 ( echo librime x64 build FAILED & call :show_elapsed & pause & exit /b 1 )
 
 for %%d in (%STASH%) do (
   if exist "%SCRIPT_DIR%\librime\%%d" (
@@ -95,12 +98,12 @@ if exist dist rmdir /s /q dist
 if exist lib rmdir /s /q lib
 
 call "%VARS_BAT%" -arch=x86 -host_arch=x64 >nul
-if errorlevel 1 ( echo VsDevCmd x86 failed & pause & exit /b 1 )
+if errorlevel 1 ( echo VsDevCmd x86 failed & call :show_elapsed & pause & exit /b 1 )
 
 call build.bat deps release
-if errorlevel 1 ( echo librime deps Win32 FAILED & pause & exit /b 1 )
+if errorlevel 1 ( echo librime deps Win32 FAILED & call :show_elapsed & pause & exit /b 1 )
 call build.bat release
-if errorlevel 1 ( echo librime Win32 build FAILED & pause & exit /b 1 )
+if errorlevel 1 ( echo librime Win32 build FAILED & call :show_elapsed & pause & exit /b 1 )
 
 for %%d in (%STASH%) do (
   if exist "%SCRIPT_DIR%\librime\%%d" (
@@ -137,7 +140,7 @@ if exist output\WeaselServer.exe (
 )
 
 msbuild weasel.sln /t:Build /p:Configuration=Release /p:Platform=x64 /fl2 /m
-if errorlevel 1 ( echo Weasel x64 build FAILED & pause & exit /b 1 )
+if errorlevel 1 ( echo Weasel x64 build FAILED & call :show_elapsed & pause & exit /b 1 )
 
 :: Kill WeaselServer before Win32 build
 :kill_Win32
@@ -151,7 +154,7 @@ if exist output\Win32\WeaselServer.exe (
 )
 
 msbuild weasel.sln /t:Build /p:Configuration=Release /p:Platform=Win32 /fl1 /m
-if errorlevel 1 ( echo Weasel Win32 build FAILED & pause & exit /b 1 )
+if errorlevel 1 ( echo Weasel Win32 build FAILED & call :show_elapsed & pause & exit /b 1 )
 echo [3/4] Weasel build done
 echo.
 
@@ -161,12 +164,20 @@ if not exist output\archives mkdir output\archives
 
 if not defined PROGRAMFILES_X86 set PROGRAMFILES_X86=%ProgramFiles(x86)%
 "%PROGRAMFILES_X86%\NSIS\Bin\makensis.exe" /DWEASEL_VERSION=%WEASEL_VERSION% /DWEASEL_BUILD=%WEASEL_BUILD% /DPRODUCT_VERSION=%PRODUCT_VERSION% output\install.nsi
-if errorlevel 1 ( echo NSIS installer FAILED & pause & exit /b 1 )
+if errorlevel 1 ( echo NSIS installer FAILED & call :show_elapsed & pause & exit /b 1 )
 
 echo.
 echo ========================================
 echo  SUCCESS!
 echo  Installer: output\archives\weasel-%PRODUCT_VERSION%-installer.exe
 echo ========================================
+call :show_elapsed
 pause
 exit /b 0
+
+rem ---------------------------------------------------------------------------
+:show_elapsed
+  for /f "usebackq" %%i in (`powershell -NoProfile -Command "$s=[datetime](Get-Content '%START_FILE%'); $d=(Get-Date)-$s; if($d.TotalSeconds -lt 0){$d=$d.Add([timespan]::FromHours(24))}; '{0:hh\:mm\:ss}' -f $d"`) do set _ELAPSED=%%i
+  echo.
+  echo Build finished, total time: %_ELAPSED%
+  exit /b

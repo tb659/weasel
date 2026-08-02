@@ -2,14 +2,14 @@
 rem ============================================================
 rem Single source of truth for Weasel version numbers.
 rem Call this from build.bat / xbuild.bat / pack.bat.
-rem Define VERSION_MAJOR / VERSION_MINOR / VERSION_PATCH
-rem before calling to override defaults.
+rem VERSION_MAJOR / VERSION_MINOR / VERSION_PATCH must be
+rem defined in env.bat before calling.
 rem ============================================================
 
-if not defined VERSION_MAJOR set VERSION_MAJOR=1
-if not defined VERSION_MINOR set VERSION_MINOR=0
-if not defined VERSION_PATCH set VERSION_PATCH=2
-if not defined WEASEL_VERSION set WEASEL_VERSION=%VERSION_MAJOR%.%VERSION_MINOR%.%VERSION_PATCH%
+if not defined VERSION_MAJOR goto error
+if not defined VERSION_MINOR goto error
+if not defined VERSION_PATCH goto error
+set WEASEL_VERSION=%VERSION_MAJOR%.%VERSION_MINOR%.%VERSION_PATCH%
 if not defined WEASEL_BUILD set WEASEL_BUILD=0
 
 set PRODUCT_VERSION=
@@ -29,3 +29,9 @@ if not defined RELEASE_BUILD (
 )
 if not defined PRODUCT_VERSION set PRODUCT_VERSION=%WEASEL_VERSION%.%WEASEL_BUILD%
 if not defined FILE_VERSION set FILE_VERSION=%WEASEL_VERSION%.%WEASEL_BUILD%
+goto :eof
+
+:error
+echo ERROR: VERSION_MAJOR / VERSION_MINOR / VERSION_PATCH not set.
+echo Please define them in env.bat.
+exit /b 1

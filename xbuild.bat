@@ -1,5 +1,7 @@
 @echo off
 setlocal enabledelayedexpansion
+set START_FILE=%TEMP%\weasel_build_start.txt
+powershell -NoProfile -Command "(Get-Date).ToString('o') | Set-Content -Encoding ascii '%START_FILE%'"
 if not defined include (
   echo You should run this inside Developer Command Promt!
   exit /b
@@ -100,7 +102,7 @@ if exist output\weaselserver.exe (
   output\weaselserver.exe /q
 )
 
-echo 正在停止 WeaselServer...
+echo Stopping WeaselServer...
 taskkill /f /im WeaselServer.exe 2>nul
 
 rem build booost
@@ -191,8 +193,18 @@ goto end
 
 :error
   echo error building weasel...
+  call :show_elapsed
   exit /b 1
   
 :end
   cd %WEASEL_ROOT%
+  call :show_elapsed
+  exit /b 0
+
+rem ---------------------------------------------------------------------------
+:show_elapsed
+  for /f "usebackq" %%i in (`powershell -NoProfile -Command "$s=[datetime](Get-Content '%START_FILE%'); $d=(Get-Date)-$s; if($d.TotalSeconds -lt 0){$d=$d.Add([timespan]::FromHours(24))}; '{0:hh\:mm\:ss}' -f $d"`) do set _ELAPSED=%%i
+  echo.
+  echo Build finished, total time: %_ELAPSED%
+  exit /b
 
