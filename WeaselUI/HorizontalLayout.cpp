@@ -1,4 +1,4 @@
-#include "stdafx.h"
+﻿#include "stdafx.h"
 #include "HorizontalLayout.h"
 
 using namespace weasel;
@@ -197,9 +197,26 @@ void HorizontalLayout::DoLayout(CDCHandle dc, PDWR pDWR) {
     }
     height = mintop_of_rows[row_cnt] + height_of_rows[row_cnt] - offsetY;
     width = max(width, max_width_of_rows);
-  } else {
+  } else if (!ShouldShowCreateWord()) {
     height -= _style.spacing + offsetY;
     width += _style.hilite_spacing + _style.border;
+  }
+  /* "添加自造词" 行：0 候选时紧随提示行；候选不足一页时紧随最后一个候选 */
+  if (ShouldShowCreateWord()) {
+    CSize cwsz;
+    GetTextSizeDW(create_word_text, create_word_text.length(),
+                  pDWR->pTextFormat, pDWR, &cwsz);
+    int top;
+    if (candidates_count) {
+      top = height + _style.spacing + offsetY;
+      height = top + cwsz.cy - offsetY;
+    } else {
+      top = height - _style.spacing;
+      height += cwsz.cy;
+    }
+    _createWordRect.SetRect(offsetX + real_margin_x, top,
+                            offsetX + real_margin_x + cwsz.cx, top + cwsz.cy);
+    width = max(width, real_margin_x * 2 + cwsz.cx);
   }
 
   width += real_margin_x;

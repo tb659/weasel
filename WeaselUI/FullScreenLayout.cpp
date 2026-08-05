@@ -59,6 +59,9 @@ void weasel::FullScreenLayout::DoLayout(CDCHandle dc, PDWR pDWR) {
     _candidateRects[i].OffsetRect(offsetx, offsety);
   }
   _statusIconRect = m_layout->GetStatusIconRect();
+  _createWordRect = m_layout->GetCreateWordRect();
+  if (!_createWordRect.IsRectEmpty())
+    _createWordRect.OffsetRect(offsetx, offsety);
 
   _contentSize.SetSize(workArea.Width(), workArea.Height());
   _contentRect.SetRect(0, 0, workArea.Width(), workArea.Height());

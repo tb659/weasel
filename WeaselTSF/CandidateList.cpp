@@ -1,7 +1,8 @@
-#include "stdafx.h"
+﻿#include "stdafx.h"
 
 #include "WeaselTSF.h"
 #include "CandidateList.h"
+#include "CreateWordDialog.h"
 #include <KeyEvent.h>
 #include <math.h>
 
@@ -296,9 +297,13 @@ void CCandidateList::StartUI() {
 
   if (!_ui->uiCallback())
     _ui->SetUICallBack([this](size_t* const sel, size_t* const hov,
-                              bool* const next, bool* const scroll_next) {
-      _tsf->HandleUICallback(sel, hov, next, scroll_next);
+                              bool* const next, bool* const scroll_next,
+                              bool* const create_word) {
+      _tsf->HandleUICallback(sel, hov, next, scroll_next, create_word);
     });
+  if (!_ui->deleteCallback())
+    _ui->SetDeleteCallBack(
+        [this](size_t index) { _tsf->HandleDeleteWord(index); });
   pUIElementMgr->BeginUIElement(this, &_pbShow, &uiid);
   // pUIElementMgr->UpdateUIElement(uiid);
   if (_pbShow) {
@@ -428,11 +433,109 @@ void WeaselTSF::_HandleMouseHoverEvent(const size_t index) {
 void WeaselTSF::HandleUICallback(size_t* const sel,
                                  size_t* const hov,
                                  bool* const next,
-                                 bool* const scroll_next) {
+                                 bool* const scroll_next,
+                                 bool* const create_word) {
   if (sel)
     _SelectCandidateOnCurrentPage(*sel);
   else if (hov)
     _HandleMouseHoverEvent(*hov);
   else if (next || scroll_next)
     _HandleMousePageEvent(next, scroll_next);
+  else if (create_word && *create_word)
+    _HandleCreateWord();
+}
+
+void WeaselTSF::_RefreshCandidateWindow() {
+  // simulate a VK_SELECT presskey to get data back and DoEditSession
+  // the simulated keycode must be the one make TranslateKeycode Non-Zero return
+  // fix me: are there any better ways?
+  INPUT inputs[2];
+  inputs[0].type = INPUT_KEYBOARD;
+  inputs[0].ki = {VK_SELECT, 0, 0, 0, 0};
+  inputs[1].type = INPUT_KEYBOARD;
+  inputs[1].ki = {VK_SELECT, 0, KEYEVENTF_KEYUP, 0, 0};
+  ::SendInput(sizeof(inputs) / sizeof(INPUT), inputs, sizeof(INPUT));
+}
+
+void WeaselTSF::_HandleCreateWord() {
+  const std::wstring& code = _cand->GetContext().preedit.str;
+  if (code.empty())
+    return;
+  // 1. 向服务端请求当前会话的真实编码（响应体），用于弹窗预填
+  if (!m_client.CreateWordRequest(code))
+    return;
+  std::wstring input_code;
+  m_client.GetResponseData([&input_code](LPWSTR buffer, DWORD) -> bool {
+    if (!buffer || !*buffer)
+      return false;
+    std::wstring resp(buffer);
+    size_t pos = resp.find(L"create_word.code=");
+    if (pos == std::wstring::npos)
+      return false;
+    size_t start = pos + wcslen(L"create_word.code=");
+    size_t end = resp.find(L'\n', start);
+    input_code = resp.substr(start, end - start);
+    return true;
+  });
+  if (input_code.empty())
+    return;
+  // 2. TSF 进程内弹窗（输入法可用），确定后提交造词
+  CreateWordDialog dialog(input_code);
+  if (!dialog.DoModal(_cand->GetActiveWnd()))
+    return;
+  if (!m_client.CreateWordCommit(dialog.code(), dialog.text()))
+    return;
+  // 3. 提示已造词并询问是否同步词库（与部署器造词流程一致）
+  if (::MessageBox(_cand->GetActiveWnd(), L"已造词。\n是否同步词库？", L"小狼毫",
+                   MB_YESNO | MB_ICONQUESTION) == IDYES) {
+    if (m_client.SyncUserData()) {
+      ::MessageBox(_cand->GetActiveWnd(), L"同步词库完成。", L"小狼毫",
+                   MB_OK | MB_ICONINFORMATION);
+    } else {
+      ::MessageBox(_cand->GetActiveWnd(), L"同步词库失败。", L"小狼毫",
+                   MB_OK | MB_ICONERROR);
+    }
+    // 同步前服务端已清理全部会话（释放 userdb 锁），重建会话以恢复输入
+    m_client.EndSession();
+    m_client.StartSession();
+  } else {
+    ::MessageBox(_cand->GetActiveWnd(),
+                 L"已造词。\n如需同步词库，请在系统托盘菜单中点击“用户资料同步”。",
+                 L"小狼毫", MB_OK | MB_ICONINFORMATION);
+  }
+  // 4. 模拟 VK_SELECT 拉取重翻后的候选，刷新候选窗
+  _RefreshCandidateWindow();
+}
+
+void WeaselTSF::_HandleDeleteWord(const size_t index) {
+  // 1. 取带太极图标的用户自造词候选文本
+  auto& cinfo = _cand->GetContext().cinfo;
+  if (index >= cinfo.candies.size())
+    return;
+  const std::wstring& text = cinfo.candies[index].str;
+  if (text.empty())
+    return;
+  // 2. 请求服务端按当前会话编码删除用户词条
+  if (!m_client.DeleteWord(text))
+    return;
+  // 3. 提示已删词并询问是否同步词库（与造词流程一致）
+  if (::MessageBox(_cand->GetActiveWnd(), L"已删词。\n是否同步词库？", L"小狼毫",
+                   MB_YESNO | MB_ICONQUESTION) == IDYES) {
+    if (m_client.SyncUserData()) {
+      ::MessageBox(_cand->GetActiveWnd(), L"同步词库完成。", L"小狼毫",
+                   MB_OK | MB_ICONINFORMATION);
+    } else {
+      ::MessageBox(_cand->GetActiveWnd(), L"同步词库失败。", L"小狼毫",
+                   MB_OK | MB_ICONERROR);
+    }
+    // 同步前服务端已清理全部会话（释放 userdb 锁），重建会话以恢复输入
+    m_client.EndSession();
+    m_client.StartSession();
+  } else {
+    ::MessageBox(_cand->GetActiveWnd(),
+                 L"已删词。\n如需同步词库，请在系统托盘菜单中点击“用户资料同步”。",
+                 L"小狼毫", MB_OK | MB_ICONINFORMATION);
+  }
+  // 4. 模拟 VK_SELECT 拉取重翻后的候选，刷新候选窗
+  _RefreshCandidateWindow();
 }

@@ -6,12 +6,15 @@
 #include <WeaselUtility.h>
 
 #include <filesystem>
+#include <fstream>
+#include <thread>
 #include <map>
 #include <array>
 #include <vector>
 #include <regex>
 #include <shlobj.h>
 #include <rime_api.h>
+#include <rime_levers_api.h>
 
 #define TRANSPARENT_COLOR 0x00000000
 #define ARGB2ABGR(value)                                 \
@@ -201,7 +204,7 @@ DWORD RimeWithWeaselHandler::AddSession(LPWSTR buffer, EatLine eat) {
     _LoadAppInlinePreeditSet(ipc_id, true);
     _UpdateInlinePreeditStatus(ipc_id);
     _RefreshTrayIcon(session_id, _UpdateUICallback);
-    session_status.status = status;
+    session_status.CacheStatus(status);
     session_status.__synced = false;
     rime_api->free_status(&status);
   }
@@ -256,7 +259,7 @@ void RimeWithWeaselHandler::UpdateColorTheme(BOOL darkMode) {
       _LoadSchemaSpecificSettings(pair.first, std::string(status.schema_id));
       _LoadAppInlinePreeditSet(pair.first, true);
       _UpdateInlinePreeditStatus(pair.first);
-      pair.second.status = status;
+      pair.second.CacheStatus(status);
       pair.second.__synced = false;
       rime_api->free_status(&status);
     }
@@ -307,6 +310,93 @@ void RimeWithWeaselHandler::PredictRequest(const std::wstring& anchor,
   CloseHandle(hFile);
 }
 
+bool RimeWithWeaselHandler::CreateWord(const std::wstring& code,
+                                       const std::wstring& text,
+                                       WeaselSessionId ipc_id) {
+  // 由管道线程调用（已在 weasel_api_mutex 锁内），不得再次加锁
+  if (m_disabled)
+    return false;
+  // 写入当前会话方案的用户词典
+  const char* schema_id = get_session_status(ipc_id).status.schema_id;
+  if (!schema_id || !*schema_id)
+    return false;
+  std::string code_utf8 = wtou8(code);
+  std::string text_utf8 = wtou8(text);
+  if (code_utf8.empty() || text_utf8.empty())
+    return false;
+  RimeModule* levers = rime_api->find_module("levers");
+  if (!levers)
+    return false;
+  RimeLeversApi* api = reinterpret_cast<RimeLeversApi*>(levers->get_api());
+  if (!api)
+    return false;
+  if (!api->add_user_phrase(schema_id, code_utf8.c_str(), text_utf8.c_str()))
+    return false;
+  // 同值重设输入以触发重译，让新词进入候选
+  RimeSessionId session_id = to_session_id(ipc_id);
+  const char* input = rime_api->get_input(session_id);
+  if (input && *input)
+    rime_api->set_input(session_id, input);
+  return true;
+}
+
+std::wstring RimeWithWeaselHandler::GetInputText(WeaselSessionId ipc_id) {
+  // 由管道线程调用（已在 weasel_api_mutex 锁内），不得再次加锁
+  if (m_disabled)
+    return std::wstring();
+  RimeSessionId session_id = to_session_id(ipc_id);
+  const char* input = rime_api->get_input(session_id);
+  if (!input || !*input)
+    return std::wstring();
+  return u8tow(input);
+}
+
+bool RimeWithWeaselHandler::DeleteWord(const std::wstring& text,
+                                       WeaselSessionId ipc_id) {
+  // 由管道线程调用（已在 weasel_api_mutex 锁内），不得再次加锁
+  if (m_disabled)
+    return false;
+  std::string text_utf8 = wtou8(text);
+  if (text_utf8.empty())
+    return false;
+  RimeSessionId session_id = to_session_id(ipc_id);
+  // TSF 仅传候选文本，需在候选列表中定位索引。
+  // 删除走 librime 候选删除：Context::DeleteCandidate 先选中该候选再触发
+  // delete_notifier，user_predict.lua 的回调按选中索引取词并清除预测库条目
+  // （与 trime2 手机端行为一致；不直接写 userdb，避免产生前缀/错误编码的
+  // 负值条目）。
+  RIME_STRUCT(RimeContext, ctx);
+  if (!rime_api->get_context(session_id, &ctx))
+    return false;
+  size_t index = static_cast<size_t>(-1);
+  for (size_t i = 0; i < ctx.menu.num_candidates; ++i) {
+    if (ctx.menu.candidates[i].text &&
+        text_utf8 == ctx.menu.candidates[i].text) {
+      index = i;
+      break;
+    }
+  }
+  rime_api->free_context(&ctx);
+  if (index == static_cast<size_t>(-1))
+    return false;
+  return rime_api->delete_candidate(session_id, index) != 0;
+}
+
+bool RimeWithWeaselHandler::SyncUserData() {
+  // 由管道线程调用（已在 weasel_api_mutex 锁内），不得再次加锁
+  if (m_disabled)
+    return false;
+  // user_dict_sync 需独占打开 userdb（leveldb LOCK 文件排他）；活跃会话的
+  // 引擎持有 userdb 实例，直接同步会因 LOCK 冲突而失败。与官方部署器先
+  // StartMaintenance 清会话一致：同步前清理全部会话以释放 userdb，
+  // TSF 客户端在同步后重建会话。
+  rime_api->cleanup_all_sessions();
+  m_session_status_map.clear();
+  m_active_session = 0;
+  // 仅同步用户词典，不做 installation_update / workspace_update
+  return !!rime_api->run_task("user_dict_sync");
+}
+
 BOOL RimeWithWeaselHandler::ProcessKeyEvent(KeyEvent keyEvent,
                                             WeaselSessionId ipc_id,
                                             EatLine eat) {
@@ -332,9 +422,55 @@ BOOL RimeWithWeaselHandler::ProcessKeyEvent(KeyEvent keyEvent,
     }
   }
   _Respond(ipc_id, eat);
+  _CheckPhraseSwitch(session_id);
   _UpdateUI(ipc_id);
   m_active_session = ipc_id;
   return (BOOL)handled;
+}
+
+void RimeWithWeaselHandler::_CheckPhraseSwitch(RimeSessionId session_id) {
+  // 菜单打开时（switcher 激活，set_active_engine(switcher)）session->context()
+  // 指向 switcher 自己的 context（构造时设了 dumb=true），此时读到的
+  // aggressive_auto_phrase 是默认 false 而非真实状态，跳过检测
+  if (rime_api->get_option(session_id, "dumb"))
+    return;
+  bool on = rime_api->get_option(session_id, "aggressive_auto_phrase") != 0;
+  if (on == m_phrase_switch_on)
+    return;
+  if (on) {
+    // 造词开关刚打开：重置造词记录
+    m_phrase_committed = false;
+  } else if (m_phrase_committed) {
+    // 关闭造词开关且开启期间有上屏（已造词）：询问是否同步词库
+    m_phrase_committed = false;
+    std::thread th([this]() { _PromptSyncAfterPhrase(); });
+    th.detach();
+  }
+  m_phrase_switch_on = on;
+}
+
+void RimeWithWeaselHandler::_PromptSyncAfterPhrase() {
+  // 与 WeaselTSF 造词弹窗一致的提示流程（独立线程，不阻塞管道线程；
+  // MB_TOPMOST 保证提示置顶不被遮挡）
+  if (::MessageBoxW(NULL, L"已造词。\n是否同步词库？", L"小狼毫",
+                    MB_YESNO | MB_ICONQUESTION | MB_SETFOREGROUND |
+                        MB_TOPMOST) != IDYES) {
+    ::MessageBoxW(NULL,
+                  L"已造词。\n如需同步词库，请在系统托盘菜单中点击“用户资料同步”。",
+                  L"小狼毫",
+                  MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND | MB_TOPMOST);
+    return;
+  }
+  bool ok = false;
+  {
+    // SyncUserData 由管道线程调用时已在 weasel_api_mutex 锁内；
+    // 此处从提示线程调用需自行加锁
+    std::lock_guard<std::mutex> guard(weasel_api_mutex());
+    ok = SyncUserData();
+  }
+  ::MessageBoxW(NULL, ok ? L"同步词库完成。" : L"同步词库失败。", L"小狼毫",
+                ok ? MB_OK | MB_ICONINFORMATION
+                   : MB_OK | MB_ICONERROR | MB_SETFOREGROUND | MB_TOPMOST);
 }
 
 void RimeWithWeaselHandler::CommitComposition(WeaselSessionId ipc_id) {
@@ -362,7 +498,11 @@ void RimeWithWeaselHandler::SelectCandidateOnCurrentPage(
              << ", index = " << index;
   if (m_disabled)
     return;
-  rime_api->select_candidate_on_current_page(to_session_id(ipc_id), index);
+  RimeSessionId session_id = to_session_id(ipc_id);
+  rime_api->select_candidate_on_current_page(session_id, index);
+  // 选择候选即确定（如 switcher 菜单中的开关项，select_notifier 触发
+  // OnSelect 完成 option 切换），随后立即检测造词开关边沿
+  _CheckPhraseSwitch(session_id);
 }
 
 bool RimeWithWeaselHandler::HighlightCandidateOnCurrentPage(
@@ -565,6 +705,10 @@ void RimeWithWeaselHandler::_UpdateUI(WeaselSessionId ipc_id) {
   // if m_ui nullptr, _UpdateUI meaningless
   if (!m_ui)
     return;
+
+  // 兜底检测造词开关（覆盖所有 UI 更新路径；switcher 菜单选择等场景）
+  if (ipc_id)
+    _CheckPhraseSwitch(to_session_id(ipc_id));
 
   Status& weasel_status = m_ui->status();
   Context weasel_context;
@@ -791,6 +935,8 @@ bool RimeWithWeaselHandler::_Respond(WeaselSessionId ipc_id, EatLine eat) {
   RimeSessionId session_id = session_status.session_id;
   RIME_STRUCT(RimeCommit, commit);
   if (rime_api->get_commit(session_id, &commit)) {
+    if (m_phrase_switch_on)
+      m_phrase_committed = true;  // 造词开关开启期间上屏即视为已造词
     actions.push_back("commit");
     std::wstring commit_text_w = escape_string(u8tow(commit.text));
     body.append(L"commit=").append(commit_text_w).append(L"\n");
@@ -837,7 +983,7 @@ bool RimeWithWeaselHandler::_Respond(WeaselSessionId ipc_id, EatLine eat) {
                                !!status.is_ascii_mode);
       }
     }
-    session_status.status = status;
+    session_status.CacheStatus(status);
     rime_api->free_status(&status);
   }
 

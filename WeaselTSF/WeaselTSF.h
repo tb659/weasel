@@ -150,11 +150,16 @@ class WeaselTSF : public ITfTextInputProcessorEx,
   void HandleUICallback(size_t* const sel,
                         size_t* const hov,
                         bool* const next,
-                        bool* const scroll_next);
+                        bool* const scroll_next,
+                        bool* const create_word);
+  void HandleDeleteWord(const size_t index) { _HandleDeleteWord(index); }
 
  private:
   /* ui callback functions private */
   void _SelectCandidateOnCurrentPage(const size_t index);
+  void _HandleCreateWord();
+  void _HandleDeleteWord(const size_t index);
+  void _RefreshCandidateWindow();
   void _HandleMouseHoverEvent(const size_t index);
   void _HandleMousePageEvent(bool* const nextPage, bool* const scrollNextPage);
   /* TSF Related */

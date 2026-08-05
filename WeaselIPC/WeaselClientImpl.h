@@ -24,6 +24,10 @@ class ClientImpl {
   bool HighlightCandidateOnCurrentPage(size_t index);
   bool ChangePage(bool backward);
   bool PredictRequest(const std::wstring& anchor);
+  bool CreateWordRequest(const std::wstring& code);
+  bool CreateWordCommit(const std::wstring& code, const std::wstring& text);
+  bool DeleteWord(const std::wstring& text);
+  bool SyncUserData();
   void UpdateInputPosition(RECT const& rc);
   void FocusIn();
   void FocusOut();

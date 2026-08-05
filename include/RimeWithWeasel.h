@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 #include <WeaselIPC.h>
 #include <WeaselUI.h>
 #include <map>
@@ -30,6 +30,18 @@ struct SessionStatus {
   RimeStatus status;
   bool __synced;
   RimeSessionId session_id;
+  // RimeGetStatus 每次为 schema_id/schema_name 新分配内存（须 RimeFreeStatus
+  // 释放），浅拷贝后在 free_status 时指针悬垂。这里改为持有字符串拷贝，
+  // 缓存 status 时调用 CacheStatus()。
+  std::string status_schema_id;
+  std::string status_schema_name;
+  void CacheStatus(const RimeStatus& src) {
+    status = src;
+    status_schema_id = src.schema_id ? src.schema_id : "";
+    status_schema_name = src.schema_name ? src.schema_name : "";
+    status.schema_id = const_cast<char*>(status_schema_id.c_str());
+    status.schema_name = const_cast<char*>(status_schema_name.c_str());
+  }
 };
 typedef std::map<DWORD, SessionStatus> SessionStatusMap;
 typedef DWORD WeaselSessionId;
@@ -64,6 +76,16 @@ class RimeWithWeaselHandler : public weasel::RequestHandler {
   virtual void UpdateColorTheme(BOOL darkMode);
   virtual void PredictRequest(const std::wstring& anchor,
                               WeaselSessionId ipc_id);
+  // 取当前会话的真实输入编码（供造词对话框预填，非 preedit 显示文本）
+  virtual std::wstring GetInputText(WeaselSessionId ipc_id);
+  // 造词：将词语写入当前会话方案的用户词典，并强制重翻候选
+  virtual bool CreateWord(const std::wstring& code,
+                          const std::wstring& text,
+                          WeaselSessionId ipc_id);
+  // 删词：按当前会话的输入编码从用户词典删除词语，并强制重翻候选
+  virtual bool DeleteWord(const std::wstring& text, WeaselSessionId ipc_id);
+  // 同步用户数据（user_dict_sync，不清理会话）
+  virtual bool SyncUserData();
 
   void OnUpdateUI(std::function<void()> const& cb);
 
@@ -86,6 +108,12 @@ class RimeWithWeaselHandler : public weasel::RequestHandler {
   void _UpdateShowNotifications(RimeConfig* config, bool initialize = false);
 
   void _UpdateInlinePreeditStatus(WeaselSessionId ipc_id);
+
+  // 检测造词开关（aggressive_auto_phrase）的切换：开启时重置造词记录，
+  // 关闭且期间有上屏时询问是否同步词库
+  void _CheckPhraseSwitch(RimeSessionId session_id);
+  // 独立线程弹出“已造词，是否同步词库”确认框（不阻塞管道线程）
+  void _PromptSyncAfterPhrase();
 
   RimeSessionId to_session_id(WeaselSessionId ipc_id) {
     return m_session_status_map[ipc_id].session_id;
@@ -122,4 +150,7 @@ class RimeWithWeaselHandler : public weasel::RequestHandler {
   bool m_global_ascii_mode;
   int m_show_notifications_time;
   DWORD m_pid;
+  // 造词开关（aggressive_auto_phrase）跟踪：开关是否开启、开启期间是否上屏
+  bool m_phrase_switch_on = false;
+  bool m_phrase_committed = false;
 };

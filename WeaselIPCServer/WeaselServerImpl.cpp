@@ -162,8 +162,6 @@ int ServerImpl::Stop() {
   return 0;
 }
 
-static std::mutex g_api_mutex;
-
 int ServerImpl::Run() {
   // This workaround causes a VC internal error:
   // void PipeServer::Listen(ServerHandler handler);
@@ -171,8 +169,9 @@ int ServerImpl::Run() {
   // auto handler = boost::bind(&ServerImpl::HandlePipeMessage, this);
   // auto listener = boost::bind(&PipeServer::Listen, channel.get(), handler);
   //
+  // 管道线程串行访问 librime（weasel_api_mutex 保证单线程进入）
   auto listener = [this](PipeMessage msg, PipeServer::Respond resp) -> void {
-    std::lock_guard guard(g_api_mutex);
+    std::lock_guard guard(weasel_api_mutex());
     HandlePipeMessage(msg, resp);
   };
   pipeThread = std::make_unique<boost::thread>(
@@ -369,6 +368,65 @@ DWORD ServerImpl::OnPredictRequest(WEASEL_IPC_COMMAND uMsg,
   return 1;
 }
 
+DWORD ServerImpl::OnCreateWord(WEASEL_IPC_COMMAND uMsg,
+                               DWORD wParam,
+                               DWORD lParam) {
+  // 返回当前会话的真实编码（响应体），供客户端进程内弹窗预填；
+  // 不使用 preedit 文本，因为 librime 会把 prompt 拼进 preedit
+  if (!m_pRequestHandler)
+    return 0;
+  wchar_t* p = reinterpret_cast<LPWSTR>(channel->ReceiveBuffer());
+  if (!p || !*p)
+    return 0;
+  std::wstring code = m_pRequestHandler->GetInputText(lParam);
+  if (code.empty())
+    return 0;
+  *channel << L"action=create_word\ncreate_word.code=" << code << L"\n";
+  return 1;
+}
+
+DWORD ServerImpl::OnCreateWordCommit(WEASEL_IPC_COMMAND uMsg,
+                                     DWORD wParam,
+                                     DWORD lParam) {
+  if (!m_pRequestHandler)
+    return 0;
+  wchar_t* p = reinterpret_cast<LPWSTR>(channel->ReceiveBuffer());
+  if (!p || !*p)
+    return 0;
+  std::wstring body(p);
+  size_t pos = body.find(L'\n');
+  std::wstring code = body.substr(0, pos);
+  std::wstring text = (pos == std::wstring::npos) ? std::wstring()
+                                                  : body.substr(pos + 1);
+  if (code.empty() || text.empty())
+    return 0;
+  return m_pRequestHandler->CreateWord(code, text, lParam) ? 1 : 0;
+}
+
+DWORD ServerImpl::OnDeleteWord(WEASEL_IPC_COMMAND uMsg,
+                               DWORD wParam,
+                               DWORD lParam) {
+  // 删词：body 传候选词文本；编码以服务端当前会话输入为准
+  if (!m_pRequestHandler)
+    return 0;
+  wchar_t* p = reinterpret_cast<LPWSTR>(channel->ReceiveBuffer());
+  if (!p || !*p)
+    return 0;
+  std::wstring text(p);
+  if (text.empty())
+    return 0;
+  return m_pRequestHandler->DeleteWord(text, lParam) ? 1 : 0;
+}
+
+DWORD ServerImpl::OnSyncUserData(WEASEL_IPC_COMMAND uMsg,
+                                 DWORD wParam,
+                                 DWORD lParam) {
+  // 同步用户数据（user_dict_sync，不清理会话）
+  if (!m_pRequestHandler)
+    return 0;
+  return m_pRequestHandler->SyncUserData() ? 1 : 0;
+}
+
 #define MAP_PIPE_MSG_HANDLE(__msg, __wParam, __lParam) \
   {                                                    \
     auto lParam = __lParam;                            \
@@ -409,6 +467,10 @@ void ServerImpl::HandlePipeMessage(PipeMessage pipe_msg, _Resp resp) {
   PIPE_MSG_HANDLE(WEASEL_IPC_CHANGE_PAGE, OnChangePage);
   PIPE_MSG_HANDLE(WEASEL_IPC_TRAY_COMMAND, OnCommand);
   PIPE_MSG_HANDLE(WEASEL_IPC_PREDICT_REQUEST, OnPredictRequest);
+  PIPE_MSG_HANDLE(WEASEL_IPC_CREATE_WORD, OnCreateWord);
+  PIPE_MSG_HANDLE(WEASEL_IPC_CREATE_WORD_COMMIT, OnCreateWordCommit);
+  PIPE_MSG_HANDLE(WEASEL_IPC_DELETE_WORD, OnDeleteWord);
+  PIPE_MSG_HANDLE(WEASEL_IPC_SYNC_USER_DATA, OnSyncUserData);
   END_MAP_PIPE_MSG_HANDLE(result);
 
   resp(result);
@@ -473,7 +535,6 @@ int Server::Run() {
 void Server::SetRequestHandler(RequestHandler* pHandler) {
   m_pImpl->SetRequestHandler(pHandler);
 }
-
 void Server::AddMenuHandler(UINT uID, CommandHandler handler) {
   m_pImpl->AddMenuHandler(uID, handler);
 }

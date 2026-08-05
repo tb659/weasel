@@ -1,4 +1,4 @@
-
+﻿
 #include "stdafx.h"
 #include "VHorizontalLayout.h"
 
@@ -207,8 +207,22 @@ void VHorizontalLayout::DoLayout(CDCHandle dc, PDWR pDWR) {
         _auxiliaryRect.OffsetRect(
             _candidateRects[0].right + _style.spacing - _auxiliaryRect.left, 0);
     }
-  } else
+  } else if (!ShouldShowCreateWord()) {
     width -= _style.spacing;
+  }
+  /* "添加自造词" 行：0 候选时紧随提示行；候选不足一页时紧随候选块下方 */
+  if (ShouldShowCreateWord()) {
+    CSize cwsz;
+    GetTextSizeDW(create_word_text, create_word_text.length(),
+                  pDWR->pTextFormat, pDWR, &cwsz);
+    int top = candidates_count ? _candidateRects[0].bottom +
+                                     _style.candidate_spacing
+                               : _preeditRect.bottom + _style.spacing;
+    _createWordRect.SetRect(offsetX + real_margin_x, top,
+                            offsetX + real_margin_x + cwsz.cx, top + cwsz.cy);
+    height = max(height, _createWordRect.bottom);
+    width = max(width, offsetX + real_margin_x * 2 + cwsz.cx);
+  }
 
   height += real_margin_y;
 
@@ -449,8 +463,21 @@ void VHorizontalLayout::DoLayoutWithWrap(CDCHandle dc, PDWR pDWR) {
     width = minleft_of_cols[col_cnt] + width_of_cols[col_cnt] - offsetX;
     height = max(height, max_height_of_cols);
     _highlightRect = _candidateRects[id];
-  } else
+  } else if (!ShouldShowCreateWord()) {
     width -= _style.spacing + offsetX;
+  }
+  /* "添加自造词" 行：0 候选时紧随提示行；候选不足一页时紧随最后一个候选列 */
+  if (ShouldShowCreateWord()) {
+    CSize cwsz;
+    GetTextSizeDW(create_word_text, create_word_text.length(),
+                  pDWR->pTextFormat, pDWR, &cwsz);
+    int top = candidates_count ? height + _style.candidate_spacing
+                               : _preeditRect.bottom + _style.spacing;
+    _createWordRect.SetRect(offsetX + real_margin_x, top,
+                            offsetX + real_margin_x + cwsz.cx, top + cwsz.cy);
+    height = max(height, _createWordRect.bottom);
+    width = max(width, offsetX + real_margin_x * 2 + cwsz.cx);
+  }
   // reposition if not left to right
   int first_cand_of_cols[MAX_CANDIDATES_COUNT] = {0};
   int offset_of_cols[MAX_CANDIDATES_COUNT] = {0};

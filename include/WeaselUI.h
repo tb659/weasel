@@ -68,15 +68,22 @@ class UI {
   bool GetIsReposition();
   bool& InServer() { return in_server_; }
 
-  std::function<void(size_t* const, size_t* const, bool* const, bool* const)>&
+  std::function<void(size_t* const, size_t* const, bool* const, bool* const,
+                     bool* const)>&
   uiCallback() {
     return _UICallback;
   }
   void SetUICallBack(
-      std::function<
-          void(size_t* const, size_t* const, bool* const, bool* const)> const&
+      std::function<void(size_t* const, size_t* const, bool* const,
+                         bool* const, bool* const)> const&
           func) {
     _UICallback = func;
+  }
+
+  // 右键删词回调（参数为候选序号），由 TSF 侧提供
+  std::function<void(size_t)>& deleteCallback() { return _DeleteCallback; }
+  void SetDeleteCallBack(std::function<void(size_t)> const& func) {
+    _DeleteCallback = func;
   }
 
  private:
@@ -89,8 +96,10 @@ class UI {
   UIStyle style_;
   UIStyle ostyle_;
   bool in_server_;
-  std::function<void(size_t* const, size_t* const, bool* const, bool* const)>
+  std::function<void(size_t* const, size_t* const, bool* const, bool* const,
+                     bool* const)>
       _UICallback;
+  std::function<void(size_t)> _DeleteCallback;
 };
 
 class DirectWriteResources {

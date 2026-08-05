@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include <WeaselIPCData.h>
 #include <WeaselUI.h>
@@ -81,6 +81,9 @@ class Layout {
   virtual CRect GetCandidateRect(int id) const = 0;
   virtual CRect GetCandidateCommentRect(int id) const = 0;
   virtual CRect GetStatusIconRect() const = 0;
+  virtual CRect GetCreateWordRect() const { return CRect(0, 0, 0, 0); }
+  virtual std::wstring GetCreateWordText() const { return L"添加自造词"; }
+  virtual bool ShouldShowCreateWord() const { return false; }
   virtual IsToRoundStruct GetRoundInfo(int id) = 0;
   virtual IsToRoundStruct GetTextRoundInfo() = 0;
   virtual CRect GetContentRect() = 0;

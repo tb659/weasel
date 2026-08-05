@@ -106,9 +106,48 @@ bool ClientImpl::ChangePage(bool backward) {
 bool ClientImpl::PredictRequest(const std::wstring& anchor) {
   if (!_Active() || anchor.empty())
     return false;
-  // anchor 通过 body 传输（WriteBody 保证大小可靠）
-  channel.WriteBody(anchor.c_str(), anchor.size());
-  LRESULT ret = _SendMessage(WEASEL_IPC_PREDICT_REQUEST, 0, session_id);
+  // anchor 閫氳繃 body 浼犺緭锛圵riteBody 淇濊瘉澶у皬鍙潬锛?
+  {
+    channel.WriteBody(anchor.c_str(), anchor.size());
+    LRESULT ret = _SendMessage(WEASEL_IPC_PREDICT_REQUEST, 0, session_id);
+    return ret != 0;
+  }
+}
+
+bool ClientImpl::CreateWordRequest(const std::wstring& code) {
+  if (!_Active() || code.empty())
+    return false;
+  // code 閫氳繃 body 浼犺緭锛堜粎浣滈潪绌烘牎楠岋紝鏈嶅姟绔互浼氳瘽鐪熷疄缂栫爜涓哄噯锛?
+  channel.WriteBody(code.c_str(), code.size());
+  LRESULT ret = _SendMessage(WEASEL_IPC_CREATE_WORD, 0, session_id);
+  return ret != 0;
+}
+
+bool ClientImpl::CreateWordCommit(const std::wstring& code,
+                                  const std::wstring& text) {
+  if (!_Active() || code.empty() || text.empty())
+    return false;
+  // code 与 text 通过 body 传输（追加式写入，以 '\n' 分隔）
+  channel.Write(code);
+  channel.Write(L"\n");
+  channel.Write(text);
+  LRESULT ret = _SendMessage(WEASEL_IPC_CREATE_WORD_COMMIT, 0, session_id);
+  return ret != 0;
+}
+
+bool ClientImpl::DeleteWord(const std::wstring& text) {
+  if (!_Active() || text.empty())
+    return false;
+  // text 通过 body 传输；编码以服务端当前会话输入为准
+  channel.Write(text);
+  LRESULT ret = _SendMessage(WEASEL_IPC_DELETE_WORD, 0, session_id);
+  return ret != 0;
+}
+
+bool ClientImpl::SyncUserData() {
+  if (!_Active())
+    return false;
+  LRESULT ret = _SendMessage(WEASEL_IPC_SYNC_USER_DATA, 0, session_id);
   return ret != 0;
 }
 
@@ -116,16 +155,16 @@ void ClientImpl::UpdateInputPosition(RECT const& rc) {
   if (!_Active())
     return;
   /*
-  移位标志 = 1bit == 0
+  绉讳綅鏍囧織 = 1bit == 0
   height:0~127 = 7bit
-  top:-2048~2047 = 12bit（有符号）
-  left:-2048~2047 = 12bit（有符号）
+  top:-2048~2047 = 12bit锛堟湁绗﹀彿锛?
+  left:-2048~2047 = 12bit锛堟湁绗﹀彿锛?
 
-  高解析度下：
-  移位标志 = 1bit == 1
-  height:0~254 = 7bit（舍弃低1位）
-  top:-4096~4094 = 12bit（有符号，舍弃低1位）
-  left:-4096~4094 = 12bit（有符号，舍弃低1位）
+  楂樿В鏋愬害涓嬶細
+  绉讳綅鏍囧織 = 1bit == 1
+  height:0~254 = 7bit锛堣垗寮冧綆1浣嶏級
+  top:-4096~4094 = 12bit锛堟湁绗﹀彿锛岃垗寮冧綆1浣嶏級
+  left:-4096~4094 = 12bit锛堟湁绗﹀彿锛岃垗寮冧綆1浣嶏級
   */
   int hi_res =
       static_cast<int>(rc.bottom - rc.top >= 128 || rc.left < -2048 ||
@@ -187,7 +226,6 @@ bool ClientImpl::GetResponseData(ResponseHandler const& handler) {
   if (!handler) {
     return false;
   }
-
   return channel.HandleResponseData(handler);
 }
 
@@ -205,6 +243,7 @@ LRESULT ClientImpl::_SendMessage(WEASEL_IPC_COMMAND Msg,
                                  DWORD wParam,
                                  DWORD lParam) {
   try {
+    // 涓茶璁块棶绠￠亾锛氶€犺瘝鐘舵€佽疆璇㈢嚎绋嬩笌 UI 绾跨▼鍙兘骞跺彂璋冪敤
     PipeMessage req{Msg, wParam, lParam};
     return channel.Transact(req);
   } catch (DWORD /* ex */) {
@@ -257,6 +296,23 @@ bool Client::ChangePage(bool backward) {
 
 bool Client::PredictRequest(const std::wstring& anchor) {
   return m_pImpl->PredictRequest(anchor);
+}
+
+bool Client::CreateWordRequest(const std::wstring& code) {
+  return m_pImpl->CreateWordRequest(code);
+}
+
+bool Client::CreateWordCommit(const std::wstring& code,
+                              const std::wstring& text) {
+  return m_pImpl->CreateWordCommit(code, text);
+}
+
+bool Client::DeleteWord(const std::wstring& text) {
+  return m_pImpl->DeleteWord(text);
+}
+
+bool Client::SyncUserData() {
+  return m_pImpl->SyncUserData();
 }
 
 void Client::UpdateInputPosition(RECT const& rc) {

@@ -27,6 +27,10 @@
 #define ID_WEASELTRAY_DISABLE_ASCII     40014
 #define ID_WEASELTRAY_RERUN_SERVICE     40015
 #define ID_WEASELTRAY_LOGDIR            40016
+#define IDD_CREATE_WORD                 200
+#define IDC_WORD_CODE                   1014
+#define IDC_WORD_TEXT                   1015
+#define IDC_WORD_HINT                   1016
 
 // Next default values for new objects
 //

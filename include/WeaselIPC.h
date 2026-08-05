@@ -4,6 +4,7 @@
 #include <windows.h>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <KeyEvent.h>
 
 #define WEASEL_IPC_WINDOW L"WeaselIPCWindow_1.0"
@@ -30,10 +31,14 @@ enum WEASEL_IPC_COMMAND {
   WEASEL_IPC_CLEAR_COMPOSITION,
   WEASEL_IPC_TRAY_COMMAND,
   WEASEL_IPC_SELECT_CANDIDATE_ON_CURRENT_PAGE,
-  WEASEL_IPC_HIGHLIGHT_CANDIDATE_ON_CURRENT_PAGE,                          
-  WEASEL_IPC_CHANGE_PAGE,                                                  
-  WEASEL_IPC_PREDICT_REQUEST,                                              
-  WEASEL_IPC_LAST_COMMAND                                                  
+  WEASEL_IPC_HIGHLIGHT_CANDIDATE_ON_CURRENT_PAGE,
+  WEASEL_IPC_CHANGE_PAGE,
+  WEASEL_IPC_PREDICT_REQUEST,
+  WEASEL_IPC_CREATE_WORD,
+  WEASEL_IPC_CREATE_WORD_COMMIT,
+  WEASEL_IPC_DELETE_WORD,
+  WEASEL_IPC_SYNC_USER_DATA,
+  WEASEL_IPC_LAST_COMMAND
 };
 
 namespace weasel {
@@ -83,6 +88,16 @@ struct RequestHandler {
   virtual void SetOption(DWORD session_id, const std::string& opt, bool val) {}
   virtual void UpdateColorTheme(BOOL darkMode) {}
   virtual void PredictRequest(const std::wstring& anchor, DWORD session_id) {}
+  virtual std::wstring GetInputText(DWORD session_id) { return std::wstring(); }
+  virtual bool CreateWord(const std::wstring& code,
+                          const std::wstring& text,
+                          DWORD session_id) {
+    return false;
+  }
+  virtual bool DeleteWord(const std::wstring& text, DWORD session_id) {
+    return false;
+  }
+  virtual bool SyncUserData() { return false; }
 };
 
 // 處理server端回應之物件
@@ -136,6 +151,14 @@ class Client {
   bool ChangePage(bool backward);
   // 回删预测：请求服务端写入预测请求文件（供 user_predict.lua 消费）
   bool PredictRequest(const std::wstring& anchor);
+  // 造词：请求服务端返回当前会话的编码（响应体），供造词对话框预填
+  bool CreateWordRequest(const std::wstring& code);
+  // 造词：将用户输入的词语写入用户词典（body 传 code + text）
+  bool CreateWordCommit(const std::wstring& code, const std::wstring& text);
+  // 删词：将用户输入的词语从用户词典删除（body 传 text，编码以服务端会话为准）
+  bool DeleteWord(const std::wstring& text);
+  // 同步用户数据（user_dict_sync，不清理会话）
+  bool SyncUserData();
   // 更新输入位置
   void UpdateInputPosition(RECT const& rc);
   // 输入窗口获得焦点
@@ -178,5 +201,11 @@ inline std::wstring GetPipeName() {
   pipe_name += L"\\";
   pipe_name += WEASEL_IPC_PIPE_NAME;
   return pipe_name;
+}
+
+// 全局互斥锁：保证管道线程对 librime 会话操作的串行访问
+inline std::mutex& weasel_api_mutex() {
+  static std::mutex m;
+  return m;
 }
 }  // namespace weasel

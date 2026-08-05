@@ -64,9 +64,10 @@ class CCandidateList : public ITfIntegratableCandidateListUIElement,
   }
 
   weasel::UIStyle& style();
+  weasel::Context& GetContext() { return _ui->ctx(); }
+  HWND GetActiveWnd() { return _GetActiveWnd(); }
 
  private:
-  // void _UpdateOwner();
   HWND _GetActiveWnd();
   HRESULT _UpdateUIElement();
 

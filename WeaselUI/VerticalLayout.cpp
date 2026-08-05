@@ -1,4 +1,4 @@
-#include "stdafx.h"
+﻿#include "stdafx.h"
 #include "VerticalLayout.h"
 
 using namespace weasel;
@@ -189,8 +189,26 @@ void weasel::VerticalLayout::DoLayout(CDCHandle dc, PDWR pDWR) {
   }
 
   /* Trim the last spacing if no candidates */
-  if (candidates_count == 0)
+  if (candidates_count == 0 && !ShouldShowCreateWord()) {
     height -= _style.spacing;
+  }
+  /* "添加自造词" 行：0 候选时紧随提示行；候选不足一页时紧随最后一个候选 */
+  if (ShouldShowCreateWord()) {
+    CSize cwsz;
+    GetTextSizeDW(create_word_text, create_word_text.length(),
+                  pDWR->pTextFormat, pDWR, &cwsz);
+    int top;
+    if (candidates_count) {
+      top = height + _style.candidate_spacing + offsetY;
+      height += cwsz.cy + _style.candidate_spacing;
+    } else {
+      top = height - _style.spacing + offsetY;
+      height += cwsz.cy;
+    }
+    _createWordRect.SetRect(real_margin_x + offsetX, top,
+                            real_margin_x + offsetX + cwsz.cx, top + cwsz.cy);
+    width = max(width, real_margin_x * 2 + cwsz.cx);
+  }
 
   height += real_margin_y;
 

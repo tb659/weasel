@@ -1,4 +1,4 @@
-#pragma once
+﻿#pragma once
 
 #include "Layout.h"
 #include <d2d1.h>
@@ -36,6 +36,15 @@ class StandardLayout : public Layout {
   }
   virtual CRect GetCandidateRect(int id) const { return _candidateRects[id]; }
   virtual CRect GetStatusIconRect() const { return _statusIconRect; }
+  virtual CRect GetCreateWordRect() const { return _createWordRect; }
+  virtual std::wstring GetCreateWordText() const { return create_word_text; }
+  // 是否显示"添加自造词"行：候选不足一页（<10）且已是最后一页（0 候选
+  // 时服务端不填充 is_last_page，视为最后一页），但有编码
+  virtual bool ShouldShowCreateWord() const {
+    return candidates_count < 10 &&
+           (candidates_count == 0 || _context.cinfo.is_last_page) &&
+           !_context.preedit.str.empty();
+  }
   virtual std::wstring GetLabelText(const std::vector<Text>& labels,
                                     int id,
                                     const wchar_t* format) const;
@@ -77,6 +86,7 @@ class StandardLayout : public Layout {
   CRect _candidateTextRects[MAX_CANDIDATES_COUNT];
   CRect _candidateCommentRects[MAX_CANDIDATES_COUNT];
   CRect _statusIconRect;
+  CRect _createWordRect;
   CRect _bgRect;
   CRect _contentRect;
   IsToRoundStruct _roundInfo[MAX_CANDIDATES_COUNT];
@@ -85,5 +95,6 @@ class StandardLayout : public Layout {
   CRect _nextPageRect;
   const std::wstring pre = L"<";
   const std::wstring next = L">";
+  const std::wstring create_word_text = L"添加自造词";
 };
 };  // namespace weasel

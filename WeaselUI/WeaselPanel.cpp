@@ -1,4 +1,4 @@
-#include "stdafx.h"
+﻿#include "stdafx.h"
 #include "WeaselPanel.h"
 
 #include <utility>
@@ -86,6 +86,7 @@ WeaselPanel::WeaselPanel(weasel::UI& ui)
       hide_candidates(false),
       pDWR(ui.pdwr()),
       _UICallback(ui.uiCallback()),
+      _DeleteCallback(ui.deleteCallback()),
       _m_gdiplusToken(0) {
   m_iconDisabled.LoadIconW(IDI_RELOAD, STATUS_ICON_SIZE, STATUS_ICON_SIZE,
                            LR_DEFAULTCOLOR);
@@ -308,7 +309,7 @@ LRESULT WeaselPanel::OnMouseWheel(UINT uMsg,
   int delta = GET_WHEEL_DELTA_WPARAM(wParam);
   if (_UICallback && delta != 0) {
     bool nextpage = delta < 0;
-    _UICallback(NULL, NULL, NULL, &nextpage);
+    _UICallback(NULL, NULL, NULL, &nextpage, NULL);
   }
   bHandled = true;
   return 0;
@@ -340,9 +341,15 @@ LRESULT WeaselPanel::OnLeftClickedUp(UINT uMsg,
       size_t i = m_ctx.cinfo.highlighted;
       if (_UICallback) {
         m_mouse_entry = false;
-        _UICallback(&i, NULL, NULL, NULL);
+        _UICallback(&i, NULL, NULL, NULL, NULL);
         if (!m_status.composing)
           DestroyWindow();
+      }
+    } else if (m_layout->ShouldShowCreateWord() &&
+               m_layout->GetCreateWordRect().PtInRect(point)) {
+      if (_UICallback) {
+        bool create_word = true;
+        _UICallback(NULL, NULL, NULL, NULL, &create_word);
       }
     } else {
       RedrawWindow();
@@ -352,6 +359,46 @@ LRESULT WeaselPanel::OnLeftClickedUp(UINT uMsg,
   return 0;
 }
 
+LRESULT WeaselPanel::OnRightClickedUp(UINT uMsg,
+                                      WPARAM wParam,
+                                      LPARAM lParam,
+                                      BOOL& bHandled) {
+  if (hide_candidates) {
+    bHandled = true;
+    return 0;
+  }
+  CPoint point;
+  point.x = GET_X_LPARAM(lParam);
+  point.y = GET_Y_LPARAM(lParam);
+
+  // 命中带太极图标的候选（用户自造词）时，弹出"删词"菜单
+  for (size_t i = 0; i < m_candidateCount && i < MAX_CANDIDATES_COUNT; ++i) {
+    CRect rect = m_layout->GetCandidateRect((int)i);
+    if (m_istorepos)
+      rect.OffsetRect(0, m_offsetys[i]);
+    rect.InflateRect(DPI_SCALE(m_style.hilite_padding_x),
+                     DPI_SCALE(m_style.hilite_padding_y));
+    if (!rect.PtInRect(point))
+      continue;
+    if (i >= m_ctx.cinfo.comments.size() ||
+        m_ctx.cinfo.comments.at(i).str.find(L"\u262F") ==
+            std::wstring::npos)
+      break;  // 非自造词候选，忽略右键
+    HMENU hMenu = CreatePopupMenu();
+    AppendMenuW(hMenu, MF_STRING, 1, L"删词");
+    CPoint ptScreen = point;
+    ClientToScreen(&ptScreen);
+    UINT cmd =
+        TrackPopupMenu(hMenu, TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON,
+                       ptScreen.x, ptScreen.y, 0, m_hWnd, NULL);
+    DestroyMenu(hMenu);
+    if (cmd == 1 && _DeleteCallback)
+      _DeleteCallback(i);
+    break;
+  }
+  bHandled = true;
+  return 0;
+}
 LRESULT WeaselPanel::OnLeftClickedDown(UINT uMsg,
                                        WPARAM wParam,
                                        LPARAM lParam,
@@ -419,7 +466,7 @@ LRESULT WeaselPanel::OnLeftClickedDown(UINT uMsg,
         if (prc.PtInRect(point)) {
           bool nextPage = false;
           if (_UICallback)
-            _UICallback(NULL, NULL, &nextPage, NULL);
+            _UICallback(NULL, NULL, &nextPage, NULL, NULL);
           bHandled = true;
           return 0;
         }
@@ -432,7 +479,7 @@ LRESULT WeaselPanel::OnLeftClickedDown(UINT uMsg,
         if (prc.PtInRect(point)) {
           bool nextPage = true;
           if (_UICallback)
-            _UICallback(NULL, NULL, &nextPage, NULL);
+            _UICallback(NULL, NULL, &nextPage, NULL, NULL);
           bHandled = true;
           return 0;
         }
@@ -450,7 +497,7 @@ LRESULT WeaselPanel::OnLeftClickedDown(UINT uMsg,
         // modify highlighted
         if (i != m_ctx.cinfo.highlighted) {
           if (_UICallback)
-            _UICallback(NULL, &i, NULL, NULL);
+            _UICallback(NULL, &i, NULL, NULL, NULL);
         } else {
           RedrawWindow();
         }
@@ -519,7 +566,7 @@ LRESULT WeaselPanel::OnMouseMove(UINT uMsg,
       if (i != m_ctx.cinfo.highlighted) {
         if (m_style.hover_type == UIStyle::HoverType::HILITE) {
           if (_UICallback)
-            _UICallback(NULL, &i, NULL, NULL);
+            _UICallback(NULL, &i, NULL, NULL, NULL);
         } else if (m_hoverIndex != i) {
           m_hoverIndex = static_cast<int>(i);
           InvalidateRect(&rcw, true);
@@ -1105,6 +1152,30 @@ void WeaselPanel::DoPaint(CDCHandle dc) {
     // draw candidates string
     if (m_candidateCount)
       drawn |= _DrawCandidates(memDC);
+    // draw create word entry
+    if (m_layout->ShouldShowCreateWord() &&
+        m_layout->GetCreateWordRect().right > m_layout->GetCreateWordRect().left) {
+      int color = COLORNOTTRANSPARENT(m_style.comment_text_color)
+                      ? m_style.comment_text_color
+                      : m_style.text_color;
+      CRect rc = m_layout->GetCreateWordRect();
+      if (m_istorepos) {
+        if (m_candidateCount > 0) {
+          // 翻转布局下候选块自下而上排列，"添加自造词"行紧随最后一个
+          // 候选，随候选块整体上移
+          CRect lastRect = m_layout->GetCandidateRect(m_candidateCount - 1);
+          rc.OffsetRect(
+              0, m_offsetys[m_candidateCount - 1] - lastRect.Height() -
+                     rc.Height() - 2 * DPI_SCALE(m_style.candidate_spacing));
+        } else {
+          rc.OffsetRect(0, m_offsety_preedit);
+        }
+      }
+      const std::wstring& text = m_layout->GetCreateWordText();
+      _TextOut(rc, text.c_str(), text.length(), color,
+               pDWR->pPreeditTextFormat.Get());
+      drawn = true;
+    }
     if (FAILED(pDWR->pRenderTarget->EndDraw())) {
       _InitFontRes(true);
       Refresh();

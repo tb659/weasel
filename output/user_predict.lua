@@ -308,6 +308,14 @@ local function get_db(env)
     return db
 end
 
+-- 用完即关，释放 userdb LOCK，避免阻塞 user_dict_sync
+-- 先强制 GC：确保 db:query 返回的访问器（持有底层裸指针）已析构，
+-- 否则 close 释放 leveldb::DB 后其析构会造成 use-after-free 崩溃
+local function close_db(db)
+    collectgarbage("collect")
+    if db and db:loaded() then db:close() end
+end
+
 -- 判断是否是 CJK 汉字（包括扩展区 A~I）
 local function is_chinese_char(char)
     local cp = utf8 and utf8.codepoint(char) or 0
@@ -375,6 +383,11 @@ get_predictions = function(env, prev_commit)
     if not prev_commit or prev_commit == "" then return nil end
     local db = get_db(env)
     if not db then return nil end
+    -- 用完即关，释放 userdb LOCK，避免阻塞 user_dict_sync
+    local function finish(v)
+        close_db(db)
+        return v
+    end
     local cands = {}
     local seen = {}
     -- 排除刚上屏的词本身，避免原地重复
@@ -518,9 +531,9 @@ get_predictions = function(env, prev_commit)
 
     if #cands > 0 then
         sort(cands, function(a, b) return a.weight > b.weight end)
-        return cands
+        return finish(cands)
     end
-    return nil
+    return finish(nil)
 end
 
 -- ======================== 删除预测候选 ========================
@@ -543,6 +556,7 @@ local function remove_predict_candidate(env, word)
         local p_key = "P\t" .. table.concat(chars, "", #chars - l + 1, #chars) .. "\t" .. word
         if db.erase then db:erase(p_key) else db:update(p_key, "") end
     end
+    close_db(db)  -- 用完即关，释放 LOCK
 end
 
 -- ======================== 过期数据批量清理 ========================
@@ -573,6 +587,7 @@ local function clean_expired(env)
         if deleted > 0 then
         end
     end
+    close_db(db)  -- 用完即关，释放 LOCK
 end
 
 -- ====================================================================
@@ -590,7 +605,6 @@ local P = {}
 -- 在 Rime 引擎加载 schema 时调用
 function P.init(env)
     load_config(env)
-    local db = get_db(env)
     clean_expired(env)
     reset_runtime_state(env)
     env.need_push = false         -- 是否需要注入占位符
@@ -607,6 +621,8 @@ function P.init(env)
             reset_memory_chain(env, "non-Chinese text")
             return
         end
+        -- 用完即关，释放 userdb LOCK，避免阻塞 user_dict_sync
+        local db = get_db(env)
 
         -- 语境超时检测：两次上屏间隔超过 CONTEXT_TIMEOUT_MS 则重置记忆链
         local current_time = rime_api and rime_api.get_time_ms and rime_api.get_time_ms() or (os_time() * 1000)
@@ -627,6 +643,7 @@ function P.init(env)
             set_is_predicting(env, false)
             predict_count = 0
             pending_cands = nil
+            close_db(db)
             return
         end
 
@@ -744,6 +761,7 @@ function P.init(env)
                             if s_find(k, query_key, 1, true) then is_known_prefix = true; break end
                         end
                     end
+                    da = nil  -- 释放访问器，避免 db close 后其析构 use-after-free
                     if is_known_prefix then break end
                 end
                 if is_known_prefix then
@@ -791,6 +809,7 @@ function P.init(env)
             predict_count = 0; set_is_predicting(env, false); pending_cands = nil
             set_prediction_visible(env, false)
         end
+        close_db(db)  -- 用完即关，释放 LOCK
     end
 
     -- ============ update_notifier 回调 ============
@@ -923,6 +942,7 @@ function P.func(key, env)
                         db:update(k, v)
                     end
                 end
+                close_db(db)  -- 用完即关，释放 LOCK
                 env.last_action_time = current_time
             else
                 -- 超时则清空回滚栈
@@ -982,7 +1002,6 @@ local T = {}
 
 function T.init(env)
     load_config(env)
-    get_db(env)
 end
 
 -- T.func: 翻译器主函数

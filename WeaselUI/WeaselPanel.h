@@ -32,6 +32,7 @@ class WeaselPanel
   MESSAGE_HANDLER(WM_MOUSEACTIVATE, OnMouseActivate)
   MESSAGE_HANDLER(WM_LBUTTONUP, OnLeftClickedUp)
   MESSAGE_HANDLER(WM_LBUTTONDOWN, OnLeftClickedDown)
+  MESSAGE_HANDLER(WM_RBUTTONUP, OnRightClickedUp)
   MESSAGE_HANDLER(WM_MOUSEWHEEL, OnMouseWheel)
   MESSAGE_HANDLER(WM_MOUSEMOVE, OnMouseMove)
   MESSAGE_HANDLER(WM_MOUSELEAVE, OnMouseLeave)
@@ -53,6 +54,10 @@ class WeaselPanel
                             WPARAM wParam,
                             LPARAM lParam,
                             BOOL& bHandled);
+  LRESULT OnRightClickedUp(UINT uMsg,
+                           WPARAM wParam,
+                           LPARAM lParam,
+                           BOOL& bHandled);
   LRESULT OnMouseWheel(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
   LRESULT OnMouseMove(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
   LRESULT OnMouseLeave(UINT uMsg, WPARAM wParam, LPARAM lParam, BOOL& bHandled);
@@ -142,8 +147,10 @@ class WeaselPanel
   bool m_sticky;
   // for multi font_face & font_point
   PDWR pDWR;
-  std::function<void(size_t* const, size_t* const, bool* const, bool* const)>&
-      _UICallback;
+  std::function<void(size_t* const, size_t* const, bool* const, bool* const,
+                     bool* const)>&
+  _UICallback;
+  std::function<void(size_t)>& _DeleteCallback;
   float bar_scale_ = 1.0;
   float dpiScaleLayout = 1.0f;
   int m_hoverIndex = -1;
