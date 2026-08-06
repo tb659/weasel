@@ -150,9 +150,11 @@ void RimeWithWeaselHandler::Initialize() {
     rime_api->config_close(&config);
   }
   m_last_schema_id.clear();
+  _StartAutoSync();
 }
 
 void RimeWithWeaselHandler::Finalize() {
+  _StopAutoSync();
   m_active_session = 0;
   m_disabled = true;
   m_session_status_map.clear();
@@ -395,6 +397,174 @@ bool RimeWithWeaselHandler::SyncUserData() {
   m_active_session = 0;
   // 仅同步用户词典，不做 installation_update / workspace_update
   return !!rime_api->run_task("user_dict_sync");
+}
+
+void RimeWithWeaselHandler::_StartAutoSync() {
+  m_auto_sync_stop = false;
+  m_sync_trigger_pending = false;
+  m_remote_sync_fingerprints.clear();
+  m_auto_sync_thread = std::thread(&RimeWithWeaselHandler::_AutoSyncLoop, this);
+}
+
+void RimeWithWeaselHandler::_StopAutoSync() {
+  {
+    std::lock_guard<std::mutex> lock(m_auto_sync_mutex);
+    m_auto_sync_stop = true;
+  }
+  m_auto_sync_cv.notify_all();
+  if (m_auto_sync_thread.joinable())
+    m_auto_sync_thread.join();
+}
+
+void RimeWithWeaselHandler::_AutoSyncLoop() {
+  while (true) {
+    {
+      std::unique_lock<std::mutex> lock(m_auto_sync_mutex);
+      if (m_auto_sync_cv.wait_for(lock, std::chrono::seconds(10),
+                                  [this]() { return m_auto_sync_stop.load(); }))
+        break;
+    }
+    if (m_auto_sync_stop || m_disabled)
+      continue;
+    // 已有待处理触发（防抖窗口内），由触发线程负责同步
+    {
+      std::lock_guard<std::mutex> lock(m_sync_trigger_mutex);
+      if (m_sync_trigger_pending)
+        continue;
+    }
+    _CheckRemoteSyncUpdates();
+  }
+}
+
+void RimeWithWeaselHandler::_CheckRemoteSyncUpdates() {
+  if (m_disabled)
+    return;
+  std::map<std::string, std::string> snapshots;
+  _CollectRemoteSnapshots(snapshots);
+  bool changed = false;
+  // 检测新出现或内容变化的远端快照
+  for (const auto& entry : snapshots) {
+    auto it = m_remote_sync_fingerprints.find(entry.first);
+    if (it == m_remote_sync_fingerprints.end() ||
+        it->second != entry.second) {
+      changed = true;
+      break;
+    }
+  }
+  // 远端快照被删除：仅从缓存清除，不触发同步。
+  // librime 同步只写本机快照、不会重建远端目录，触发将导致无限循环。
+  for (auto it = m_remote_sync_fingerprints.begin();
+       it != m_remote_sync_fingerprints.end();) {
+    if (snapshots.find(it->first) == snapshots.end())
+      it = m_remote_sync_fingerprints.erase(it);
+    else
+      ++it;
+  }
+  if (!changed)
+    return;
+  m_remote_sync_fingerprints = snapshots;
+  _TriggerRemoteSync();
+}
+
+// 对文件内容计算 FNV-1a 64 位哈希
+static uint64_t FileFingerprint(const std::filesystem::path& path) {
+  uint64_t hash = 14695981039346656037ULL;
+  std::ifstream file(path, std::ios::binary);
+  if (!file)
+    return 0;
+  char buf[4096];
+  while (file) {
+    file.read(buf, sizeof(buf));
+    std::streamsize n = file.gcount();
+    for (std::streamsize i = 0; i < n; ++i) {
+      hash ^= static_cast<uint8_t>(buf[i]);
+      hash *= 1099511628211ULL;
+    }
+  }
+  return hash;
+}
+
+void RimeWithWeaselHandler::_CollectRemoteSnapshots(
+    std::map<std::string, std::string>& snapshots) {
+  snapshots.clear();
+  const char* sync_dir = rime_api->get_sync_dir();
+  if (!sync_dir)
+    return;
+  std::filesystem::path sync_path(sync_dir);
+  std::string self_id;
+  // 自身 installation_id 保存在 installation.yaml 中
+  RimeConfig config = {NULL};
+  if (rime_api->config_open("installation", &config)) {
+    char buffer[64] = {0};
+    if (rime_api->config_get_string(&config, "installation_id", buffer,
+                                    sizeof(buffer)))
+      self_id = buffer;
+    rime_api->config_close(&config);
+  }
+  std::error_code ec;
+  for (const auto& item : std::filesystem::directory_iterator(sync_path, ec)) {
+    if (ec)
+      break;
+    if (!item.is_directory(ec))
+      continue;
+    std::string id = item.path().filename().u8string();
+    // 排除自身安装目录，避免与自身快照形成回环
+    if (!id.empty() && id == self_id)
+      continue;
+    // 指纹 = 目录内所有快照文件内容哈希的排序拼接；
+    // 不依赖目录 mtime（Windows 目录 mtime 不随文件内容修改而更新）
+    std::map<std::string, uint64_t> hashes;
+    std::error_code fec;
+    for (const auto& f :
+         std::filesystem::directory_iterator(item.path(), fec)) {
+      if (fec) {
+        fec.clear();
+        continue;
+      }
+      if (!f.is_regular_file(fec))
+        continue;
+      hashes[f.path().filename().u8string()] = FileFingerprint(f.path());
+    }
+    if (hashes.empty())
+      continue;
+    std::string fp;
+    for (const auto& entry : hashes)
+      fp += entry.first + ":" + std::to_string(entry.second) + ";";
+    snapshots[id] = fp;
+  }
+}
+
+void RimeWithWeaselHandler::_TriggerRemoteSync() {
+  {
+    std::lock_guard<std::mutex> lock(m_sync_trigger_mutex);
+    if (m_sync_trigger_pending)
+      return;
+    m_sync_trigger_pending = true;
+  }
+  // 先等待同步目录/进程客户端可能正在进行的写入，防抖 5 秒，
+  // 保证远端快照写完后再拉取
+  std::thread th([this]() {
+    std::this_thread::sleep_for(std::chrono::seconds(5));
+    {
+      std::lock_guard<std::mutex> lock(m_sync_trigger_mutex);
+      m_sync_trigger_pending = false;
+    }
+    if (m_auto_sync_stop || m_disabled)
+      return;
+    LOG(INFO) << "auto sync: syncing user data";
+    bool ok = false;
+    {
+      // SyncUserData 由管道线程调用时假设已持有 weasel_api_mutex，
+      // 自动同步线程调用需自行加锁
+      std::lock_guard<std::mutex> guard(weasel_api_mutex());
+      ok = SyncUserData();
+    }
+    LOG(INFO) << "auto sync: " << (ok ? "succeeded" : "failed");
+    // 同步会重写自身快照，结束后立即刷新记录，
+    // 防止同步期间远端目录的进一步变化被遗漏
+    _CheckRemoteSyncUpdates();
+  });
+  th.detach();
 }
 
 BOOL RimeWithWeaselHandler::ProcessKeyEvent(KeyEvent keyEvent,

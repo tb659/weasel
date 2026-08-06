@@ -4,6 +4,10 @@
 #include <map>
 #include <string>
 #include <mutex>
+#include <atomic>
+#include <condition_variable>
+#include <thread>
+#include <filesystem>
 
 #include <rime_api.h>
 
@@ -114,6 +118,16 @@ class RimeWithWeaselHandler : public weasel::RequestHandler {
   void _CheckPhraseSwitch(RimeSessionId session_id);
   // 独立线程弹出“已造词，是否同步词库”确认框（不阻塞管道线程）
   void _PromptSyncAfterPhrase();
+  // 自动同步：与远端设备共享同一同步目录，定时检测远端快照变化并静默同步
+  void _StartAutoSync();
+  void _StopAutoSync();
+  void _AutoSyncLoop();
+  // 检查远端快照是否有更新（内容指纹变化），有则触发同步
+  void _CheckRemoteSyncUpdates();
+  // 收集同步目录中除自身 installation_id 外的远端快照内容指纹
+  void _CollectRemoteSnapshots(std::map<std::string, std::string>& snapshots);
+  // 触发一次同步（防抖 5 秒，保证远端写完后才拉取）
+  void _TriggerRemoteSync();
 
   RimeSessionId to_session_id(WeaselSessionId ipc_id) {
     return m_session_status_map[ipc_id].session_id;
@@ -153,4 +167,15 @@ class RimeWithWeaselHandler : public weasel::RequestHandler {
   // 造词开关（aggressive_auto_phrase）跟踪：开关是否开启、开启期间是否上屏
   bool m_phrase_switch_on = false;
   bool m_phrase_committed = false;
+  // 自动同步：轮询线程、停止标志、条件变量与互斥
+  std::thread m_auto_sync_thread;
+  std::atomic<bool> m_auto_sync_stop{false};
+  std::condition_variable m_auto_sync_cv;
+  std::mutex m_auto_sync_mutex;
+  // 远端快照内容指纹缓存（installation_id -> 指纹）
+  // 注：Windows 目录 mtime 不随文件内容修改而更新，必须下探到文件内容
+  std::map<std::string, std::string> m_remote_sync_fingerprints;
+  // 同步防抖：避免在远端写快照的过程中过早拉取
+  std::mutex m_sync_trigger_mutex;
+  bool m_sync_trigger_pending = false;
 };
