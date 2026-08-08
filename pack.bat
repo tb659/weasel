@@ -161,6 +161,11 @@ echo.
 echo [4/4] NSIS installer ...
 cd /d "%SCRIPT_DIR%"
 if not exist output\archives mkdir output\archives
+copy /Y "%SCRIPT_DIR%\LICENSE.txt" "%SCRIPT_DIR%\output\" >nul
+copy /Y "%SCRIPT_DIR%\README.md" "%SCRIPT_DIR%\output\README.txt" >nul
+copy /Y "%SCRIPT_DIR%\plum\rime-install.bat" "%SCRIPT_DIR%\output\" >nul
+if not exist "%SCRIPT_DIR%\output\data\opencc" mkdir "%SCRIPT_DIR%\output\data\opencc"
+copy /Y "%SCRIPT_DIR%\librime\share\opencc\*.*" "%SCRIPT_DIR%\output\data\opencc\" >nul
 
 if not defined PROGRAMFILES_X86 set PROGRAMFILES_X86=%ProgramFiles(x86)%
 "%PROGRAMFILES_X86%\NSIS\Bin\makensis.exe" /DWEASEL_VERSION=%WEASEL_VERSION% /DWEASEL_BUILD=%WEASEL_BUILD% /DPRODUCT_VERSION=%PRODUCT_VERSION% output\install.nsi
