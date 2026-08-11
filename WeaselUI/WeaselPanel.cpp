@@ -1183,7 +1183,7 @@ void WeaselPanel::DoPaint(CDCHandle dc) {
     // end texts drawing
 
     // status icon (I guess Metro IME stole my idea :)
-    if (m_layout->ShouldDisplayStatusIcon()) {
+    if (m_layout->ShouldDisplayStatusIcon() && !m_ctx.empty()) {
       // decide if custom schema zhung icon to show
       LoadIconNecessary(m_current_zhung_icon, m_style.current_zhung_icon,
                         m_iconEnabled, IDI_ZH);
