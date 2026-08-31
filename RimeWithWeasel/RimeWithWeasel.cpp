@@ -643,11 +643,15 @@ void RimeWithWeaselHandler::_PromptSyncAfterPhrase() {
                    : MB_OK | MB_ICONERROR | MB_SETFOREGROUND | MB_TOPMOST);
 }
 
-void RimeWithWeaselHandler::CommitComposition(WeaselSessionId ipc_id) {
+void RimeWithWeaselHandler::CommitComposition(WeaselSessionId ipc_id,
+                                              EatLine eat) {
   DLOG(INFO) << "Commit composition: ipc_id = " << ipc_id;
   if (m_disabled)
     return;
   rime_api->commit_composition(to_session_id(ipc_id));
+  // 将上屏文本（以及随后为空的状态/上下文）通过响应写回客户端，
+  // 供客户端 GetResponseData -> DoEditSession 落地文本并结束组词
+  _Respond(ipc_id, eat);
   _UpdateUI(ipc_id);
   m_active_session = ipc_id;
 }

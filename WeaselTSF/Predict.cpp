@@ -91,6 +91,22 @@ void WeaselTSF::_TriggerBackspacePredict(ITfContext* pContext,
   // 英文模式不预测
   if (_status.ascii_mode)
     return;
+  // 用户正在选中文字（非折叠选区，例如按住 Shift+←/→ 选词）时不触发回删预测：
+  // 否则会模拟发送占位符按键 zpredictz，令 Rime 在选区处新建组词，把 preedit
+  // 写入文档并覆盖（从而"删除"）用户选中的文字。
+  {
+    TF_SELECTION sel;
+    ULONG fetched = 0;
+    if (pContext->GetSelection(ec, TF_DEFAULT_SELECTION, 1, &sel, &fetched) ==
+            S_OK &&
+        fetched == 1 && sel.range) {
+      BOOL is_empty = TRUE;
+      sel.range->IsEmpty(ec, &is_empty);
+      sel.range->Release();
+      if (!is_empty)
+        return;
+    }
+  }
   // 刚上屏后的短暂窗口：上屏联想由 lua commit_cb 自行注入，避免抢占
   DWORD now = GetTickCount();
   if (_last_commit_tick &&

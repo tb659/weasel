@@ -69,7 +69,7 @@ struct RequestHandler {
                                EatLine eat) {
     return FALSE;
   }
-  virtual void CommitComposition(DWORD session_id) {}
+  virtual void CommitComposition(DWORD session_id, EatLine eat = 0) {}
   virtual void ClearComposition(DWORD session_id) {}
   virtual void SelectCandidateOnCurrentPage(size_t index, DWORD session_id) {}
   virtual bool HighlightCandidateOnCurrentPage(size_t index,

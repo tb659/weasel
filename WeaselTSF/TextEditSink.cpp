@@ -37,7 +37,12 @@ STDAPI WeaselTSF::OnEndEdit(ITfContext* pContext,
           cFetched == 1) {
         ITfRange* pRangeComposition;
         if (_pComposition->GetRange(&pRangeComposition) == S_OK) {
-          if (!IsRangeCovered(ecReadOnly, tfSelection.range, pRangeComposition))
+          // 用户把光标/选区移出组词范围（典型如按住 Shift+←/→ 选中文字）。
+          // 此时若正处于“先上屏再放行选择键”的暂缓上屏过程中（异步 edit 场景，
+          // DoEditSession 尚未完成 commit），不能在此把组词文本清空，否则文字
+          // 会被删除；应跳过，交由随后的 DoEditSession 完成上屏。
+          if (!IsRangeCovered(ecReadOnly, tfSelection.range, pRangeComposition) &&
+              !_fSelectionCommitPending)
             _EndComposition(pContext, true);
           pRangeComposition->Release();
         }

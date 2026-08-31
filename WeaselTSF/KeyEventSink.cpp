@@ -34,6 +34,17 @@ void WeaselTSF::_ProcessKeyEvent(WPARAM wParam, LPARAM lParam, BOOL* pfEaten) {
       else if (ke.keycode == ibus::Down)
         ke.keycode = ibus::Up;
     }
+    // 组词时按住 Shift 按 ←/→ 用来选中文档文字（而非在组词中移动光标）。
+    // 若交给 Rime 处理（navigator 的 IgnoreShift 兜底会吞掉该键），会让
+    // 文本被删除。这里先上屏当前组词，再把按键放行给应用程序，使其能正常选中文字。
+    if (_IsComposing() &&
+        (ke.keycode == ibus::Left || ke.keycode == ibus::Right) &&
+        (ke.mask & ibus::SHIFT_MASK) != 0 && (ke.mask & ibus::RELEASE_MASK) == 0) {
+      _fSelectionCommitPending = TRUE;
+      m_client.CommitComposition();
+      *pfEaten = FALSE;
+      return;
+    }
     if (!keyCountToSimulate)
       *pfEaten = (BOOL)m_client.ProcessKeyEvent(ke);
 

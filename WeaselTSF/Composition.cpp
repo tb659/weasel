@@ -431,6 +431,7 @@ void WeaselTSF::_AbortComposition(bool clear) {
   }
   _committed = TRUE;
   _cand->Destroy();
+  _fSelectionCommitPending = FALSE;
 }
 
 void WeaselTSF::_FinalizeComposition() {

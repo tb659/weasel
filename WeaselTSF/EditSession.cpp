@@ -13,6 +13,9 @@ STDAPI WeaselTSF::DoEditSession(TfEditCookie ec) {
 
   bool ok = m_client.GetResponseData(std::ref(parser));
 
+  // 无论成功与否都清除“选中而暂缓上屏”的标记，避免其残留导致后续组词不被正确结束
+  _fSelectionCommitPending = FALSE;
+
   _UpdateLanguageBar(_status);
 
   if (ok) {

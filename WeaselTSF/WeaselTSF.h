@@ -247,6 +247,10 @@ class WeaselTSF : public ITfTextInputProcessorEx,
   BOOL _async_edit = false;
   BOOL _committed = false;
   BOOL _isToOpenClose = false;
+  // 组词时按住 Shift+←/→ 选中文字，先上屏当前组词再把按键放行给应用程序。
+  // 在异步（async_edit）环境下 OnEndEdit 可能在 DoEditSession 完成上屏前触发，
+  // 该标记用于防止它在此时把组词文本清空（导致文字被删除）。
+  BOOL _fSelectionCommitPending = false;
 
   /* Backspace prediction state */
   DWORD _last_commit_tick = 0;
