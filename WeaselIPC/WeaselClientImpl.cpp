@@ -103,20 +103,6 @@ bool ClientImpl::ChangePage(bool backward) {
   return ret != 0;
 }
 
-bool ClientImpl::PredictRequest(const std::wstring& anchor) {
-  if (anchor.empty())
-    return false;
-  // 注意：该调用可能来自 TSF 的 OnEndEdit 回调线程（非 UI 线程），
-  // 该线程可能从未建立过管道连接，因此不能依赖 _Active() 检查；
-  // Transact 内部的 _Ensure() 会按需自动建立 thread-local 连接。
-  // anchor 閫氳繃 body 浼犺緭锛圵riteBody 淇濊瘉澶у皬鍙潬锛?
-  {
-    channel.WriteBody(anchor.c_str(), anchor.size());
-    LRESULT ret = _SendMessage(WEASEL_IPC_PREDICT_REQUEST, 0, session_id);
-    return ret != 0;
-  }
-}
-
 bool ClientImpl::CreateWordRequest(const std::wstring& code) {
   if (!_Active() || code.empty())
     return false;
@@ -295,10 +281,6 @@ bool Client::HighlightCandidateOnCurrentPage(size_t index) {
 
 bool Client::ChangePage(bool backward) {
   return m_pImpl->ChangePage(backward);
-}
-
-bool Client::PredictRequest(const std::wstring& anchor) {
-  return m_pImpl->PredictRequest(anchor);
 }
 
 bool Client::CreateWordRequest(const std::wstring& code) {

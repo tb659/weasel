@@ -12,7 +12,6 @@
 #include <array>
 #include <vector>
 #include <regex>
-#include <shlobj.h>
 #include <rime_api.h>
 #include <rime_levers_api.h>
 
@@ -267,49 +266,6 @@ void RimeWithWeaselHandler::UpdateColorTheme(BOOL darkMode) {
     }
   }
   m_ui->style() = get_session_status(m_active_session).style;
-}
-
-void RimeWithWeaselHandler::PredictRequest(const std::wstring& anchor,
-                                           WeaselSessionId ipc_id) {
-  // 回删预测：将光标前文本写入请求文件，供 user_predict.lua 消费。
-  // 由服务端（本进程）写入，绕开 TSF 客户端的 UWP/浏览器沙箱文件限制。
-  if (anchor.empty())
-    return;
-  DWORD revision = GetTickCount();
-  int anchor_len = WideCharToMultiByte(CP_UTF8, 0, anchor.c_str(), -1, NULL, 0,
-                                       NULL, NULL);
-  int revision_len = WideCharToMultiByte(CP_UTF8, 0,
-                                         std::to_wstring(revision).c_str(), -1,
-                                         NULL, 0, NULL, NULL);
-  if (anchor_len <= 0 || revision_len <= 0)
-    return;
-  std::string utf8_anchor(anchor_len - 1, '\0');
-  std::string utf8_revision(revision_len - 1, '\0');
-  WideCharToMultiByte(CP_UTF8, 0, anchor.c_str(), -1, &utf8_anchor[0],
-                      anchor_len, NULL, NULL);
-  WideCharToMultiByte(CP_UTF8, 0, std::to_wstring(revision).c_str(), -1,
-                      &utf8_revision[0], revision_len, NULL, NULL);
-
-  std::wstring dir;
-  wchar_t path[MAX_PATH] = {0};
-  if (SHGetFolderPathW(NULL, CSIDL_APPDATA, NULL, 0, path) == S_OK)
-    dir = path;
-  if (dir.empty())
-    return;
-  if (dir.back() != L'\\')
-    dir += L'\\';
-  dir += L"Rime\\user_predict_request.txt";
-
-  HANDLE hFile =
-      CreateFileW(dir.c_str(), GENERIC_WRITE, 0, NULL, CREATE_ALWAYS,
-                  FILE_ATTRIBUTE_NORMAL, NULL);
-  if (hFile == INVALID_HANDLE_VALUE)
-    return;
-  std::string content = utf8_revision + "\n" + utf8_anchor + "\n";
-  DWORD written = 0;
-  WriteFile(hFile, content.c_str(),
-            static_cast<DWORD>(content.size()), &written, NULL);
-  CloseHandle(hFile);
 }
 
 bool RimeWithWeaselHandler::CreateWord(const std::wstring& code,

@@ -29,7 +29,6 @@ STDAPI WeaselTSF::DoEditSession(TfEditCookie ec) {
       _InsertText(_pEditSessionContext, commit);
       _EndComposition(_pEditSessionContext, false);
       _committed = TRUE;
-      _SetLastCommitTick();
     } else {
       _committed = FALSE;
     }

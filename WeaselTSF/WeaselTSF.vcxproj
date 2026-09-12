@@ -467,7 +467,6 @@
     <ClCompile Include="Globals.cpp" />
     <ClCompile Include="KeyEvent.cpp" />
     <ClCompile Include="KeyEventSink.cpp" />
-    <ClCompile Include="Predict.cpp" />
     <ClCompile Include="LanguageBar.cpp" />
     <ClCompile Include="Register.cpp" />
     <ClCompile Include="Server.cpp" />

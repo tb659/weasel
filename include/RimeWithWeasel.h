@@ -78,8 +78,6 @@ class RimeWithWeaselHandler : public weasel::RequestHandler {
                          const std::string& opt,
                          bool val);
   virtual void UpdateColorTheme(BOOL darkMode);
-  virtual void PredictRequest(const std::wstring& anchor,
-                              WeaselSessionId ipc_id);
   // 取当前会话的真实输入编码（供造词对话框预填，非 preedit 显示文本）
   virtual std::wstring GetInputText(WeaselSessionId ipc_id);
   // 造词：将词语写入当前会话方案的用户词典，并强制重翻候选

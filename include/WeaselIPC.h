@@ -33,7 +33,6 @@ enum WEASEL_IPC_COMMAND {
   WEASEL_IPC_SELECT_CANDIDATE_ON_CURRENT_PAGE,
   WEASEL_IPC_HIGHLIGHT_CANDIDATE_ON_CURRENT_PAGE,
   WEASEL_IPC_CHANGE_PAGE,
-  WEASEL_IPC_PREDICT_REQUEST,
   WEASEL_IPC_CREATE_WORD,
   WEASEL_IPC_CREATE_WORD_COMMIT,
   WEASEL_IPC_DELETE_WORD,
@@ -87,7 +86,6 @@ struct RequestHandler {
   virtual void EndMaintenance() {}
   virtual void SetOption(DWORD session_id, const std::string& opt, bool val) {}
   virtual void UpdateColorTheme(BOOL darkMode) {}
-  virtual void PredictRequest(const std::wstring& anchor, DWORD session_id) {}
   virtual std::wstring GetInputText(DWORD session_id) { return std::wstring(); }
   virtual bool CreateWord(const std::wstring& code,
                           const std::wstring& text,
@@ -149,8 +147,6 @@ class Client {
   bool HighlightCandidateOnCurrentPage(size_t index);
   // 翻页，backward = true 向前翻，false向后翻
   bool ChangePage(bool backward);
-  // 回删预测：请求服务端写入预测请求文件（供 user_predict.lua 消费）
-  bool PredictRequest(const std::wstring& anchor);
   // 造词：请求服务端返回当前会话的编码（响应体），供造词对话框预填
   bool CreateWordRequest(const std::wstring& code);
   // 造词：将用户输入的词语写入用户词典（body 传 code + text）

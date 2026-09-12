@@ -187,15 +187,6 @@ class WeaselTSF : public ITfTextInputProcessorEx,
 
   BOOL _InsertText(com_ptr<ITfContext> pContext, const std::wstring& ext);
 
-  /* Backspace prediction */
-  void _TriggerBackspacePredict(ITfContext* pContext, TfEditCookie ec);
-  std::wstring _GetCaretPrecedingText(ITfContext* pContext,
-                                      TfEditCookie ec,
-                                      size_t max_cjk_chars);
-  void _WritePredictRequestFile(const std::wstring& anchor);
-  void _SendPredictPlaceholderKeys();
-  void _SetLastCommitTick();
-
   void _DeleteCandidateList();
 
   BOOL _InitCompartment();
@@ -251,10 +242,4 @@ class WeaselTSF : public ITfTextInputProcessorEx,
   // 在异步（async_edit）环境下 OnEndEdit 可能在 DoEditSession 完成上屏前触发，
   // 该标记用于防止它在此时把组词文本清空（导致文字被删除）。
   BOOL _fSelectionCommitPending = false;
-
-  /* Backspace prediction state */
-  DWORD _last_commit_tick = 0;
-  DWORD _last_predict_tick = 0;
-  std::wstring _last_predict_anchor;
-  std::wstring _composing_anchor;
 };
